@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "landscapes"
+version = "0.1.0"
+description = ""
+authors = ["victoria-mochulska <viktoriia.mochulska@mail.mcgill.ca>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^1.26.4"
+matplotlib = "^3.9.0"
+scikit-image = "^0.23.2"
+cmcrameri = "^1.9"
+
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
