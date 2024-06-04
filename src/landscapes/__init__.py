@@ -1,0 +1,1 @@
+from .landscape_class import Landscape
