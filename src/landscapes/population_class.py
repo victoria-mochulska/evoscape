@@ -9,15 +9,11 @@ import numpy as np
 
 class Population:
     def __init__(self, N, problem_type, landscape_pars, prob_pars, fitness_pars,
-                 par_limits, par_choice_values, start_module_list=(), start_fitness=-100.):
-        self.N = N  ## N >= 1 !
+                 par_limits, par_choice_values, start_module_list=(), start_fitness=-np.inf):
+        self.N = N  # N >= 1 !
         self.problem_type = problem_type
         self.landscape_pars = landscape_pars
         self.prob_pars = prob_pars
-        # self.fitness_pars = fitness_pars
-        # self.time_pars = time_pars
-        # self.times = np.linspace(time_pars['t0'], time_pars['tf'], time_pars['timesteps'])
-        # self.times = (time_pars['t0'], time_pars['tf'], time_pars['timesteps'])
         self.par_limits = par_limits
         self.par_choice_values = par_choice_values
 
@@ -78,6 +74,7 @@ class Population:
 
     # ______________________________________________________________________________________________________________________
     def evolve_parallel(self, ngenerations, fitness_pars, saved_files_dir, save_each=10):
+        """ Evolutionary optimization using all CPUs """
         timestr = time.strftime("%Y%m%d-%H%M%S")
         print('Timecode:', timestr)
         fitness_traj = np.zeros(ngenerations)
@@ -94,25 +91,17 @@ class Population:
         with open(save_dir + timestr + "_initial_full.pickle", "wb") as f:
             pickle.dump(self, f)
 
-        # print('create pool')
         pool = mp.Pool(mp.cpu_count())
-        # pool = mp.Pool(5)
-        # print('created pool')
 
         for igen in range(ngenerations):
-            # print('gen', igen)
             results = []
-            # print('results:', results)
             for odd_landscape in self.landscape_list[::2]:
                 results.append(pool.apply_async(odd_landscape.mutate_and_return,
                                                 args=(self.par_limits, self.par_choice_values,
                                                       self.prob_pars, fitness_pars)))
-                # print('pool applied')
 
             for ind in range(self.N // 2):
-                # print('getting results', ind)
                 result = results[ind].get()
-                # print('got results')
                 self.landscape_list[2 * ind] = result
 
             self.landscape_list.sort(key=lambda landscape: landscape.fitness + 0.002 * np.random.randn(), reverse=True)
