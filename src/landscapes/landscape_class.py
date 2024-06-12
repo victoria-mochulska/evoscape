@@ -250,6 +250,7 @@ class Landscape:
         """
         if coordinate is None:
             coordinate = self.cell_coordinates
+        states = None
 
         if measure == 'dist':
             dist = np.empty((coordinate.shape[1], len(self.module_list)))
@@ -264,7 +265,7 @@ class Landscape:
                     -np.sum((coordinate.T - np.array((module.x, module.y))) ** 2, axis=1) / 2. / st ** 2) / st ** 2
             # print(prob/2/np.pi)
             prob = (prob.T / np.sum(prob, axis=1)).T
-            prob[:, -1] = 0.3  # probability threshold
+            prob[:, -1] = 0. # probability threshold: for probs below this value cells will be assigned as 'unclustered'
             # print(prob*100)
             states = np.argmax(prob, axis=1)
         return states

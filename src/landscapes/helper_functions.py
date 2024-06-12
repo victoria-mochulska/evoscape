@@ -65,7 +65,7 @@ def get_cell_data(filename):
     cell_data = cell_data[:, idx]
     # col_labels = ['EPI', 'Tr', 'CE', 'PN', 'M']
     # print(col_labels)
-    print(cell_data)
+    # print(cell_data)
     # col_colors = ['indianred', 'tab:orange', 'gold', 'tab:green', 'tab:blue']
     return cell_data
 

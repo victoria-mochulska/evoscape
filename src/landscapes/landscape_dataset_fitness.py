@@ -1,31 +1,13 @@
 import numpy as np
 
-from .auxiliary_functions import kl_distance
-from .landscape_class import Landscape
+from helper_functions import kl_distance, d1_distance
+from landscape_class import Landscape
 
 result_distance = kl_distance
-
-
 # result_distance = d1_distance
 
 
 class CellDiff_Dataset_Landscape(Landscape):
-    # fitness_pars: cell_data, ncells, noise, init_state
-
-    def get_cell_state(self, coordinate):
-        dist = np.zeros(len(self.module_list))
-        for i, module in enumerate(self.module_list):
-            dist[i] = np.linalg.norm(coordinate - np.array((module.x, module.y)))
-        return np.argmin(dist)
-
-    def get_avg_coordinates(self, ncells, times, noise, init_state=0, avg_over=1):  # ndt for integration? default=10
-        avg_coordinates = np.zeros((ncells, 2))
-        for icell in range(ncells):
-            traj = self.get_trajectory_noisy(times,
-                                             init_cond=(self.module_list[init_state].x, self.module_list[init_state].y),
-                                             noise=noise)
-            avg_coordinates[icell] = np.mean(traj[:, -avg_over:], axis=1)
-        return avg_coordinates
 
     def get_fitness(self, fitness_pars):
         time_pars = fitness_pars['time_pars']
@@ -45,19 +27,12 @@ class CellDiff_Dataset_Landscape(Landscape):
             cell_states = np.zeros(cell_data_matrices[0].shape)  # shape = (timepoints, states)
             self.init_cells(fitness_pars['ncells'], fitness_pars['init_state'], noise=fitness_pars['noise'])
 
-            traj, states = self.run_cells(*time_pars, fitness_pars['noise'], ndt=50)
+            traj, states = self.run_cells(*time_pars, fitness_pars['noise'], ndt=fitness_pars['ndt'])
             for timepoint in range(len(times)):
                 for cell_state in range(cell_states.shape[1]):
                     cell_states[timepoint, cell_state] = np.sum(states[:, timepoint] == cell_state)
             cell_states = cell_states / fitness_pars['ncells']  # normalized to give probability
             self.result.append(cell_states)
-
-            # Calculate weights for each cell state to account for the total number of cells observed in given state:
-            # column_weights = 1 / np.sum(cell_data, axis=0)
-            # column_weights[np.isinf(column_weights)] = 0.
-            # column_weights *= cell_data.shape[1]/sum(column_weights)  # normalize: sum of weights over states/columns
-            # print('Weights', column_weights)
-            # column_weights = np.tile(column_weights, (cell_data.shape[0], 1))  # repeat for all t
 
             fitness -= result_distance(cell_states, cell_data, None) / len(times)
 
@@ -83,3 +58,27 @@ class CellDiff_Dataset_Landscape(Landscape):
 
         fitness -= penalty * fitness_pars['penalty_weight']
         return fitness
+
+# ____________________________________________________________________________________________________________________
+    # Calculate weights for each cell state to account for the total number of cells observed in given state:
+    # column_weights = 1 / np.sum(cell_data, axis=0)
+    # column_weights[np.isinf(column_weights)] = 0.
+    # column_weights *= cell_data.shape[1]/sum(column_weights)  # normalize: sum of weights over states/columns
+    # print('Weights', column_weights)
+    # column_weights = np.tile(column_weights, (cell_data.shape[0], 1))  # repeat for all t
+
+
+    # def get_cell_state(self, coordinate):
+    #     dist = np.zeros(len(self.module_list))
+    #     for i, module in enumerate(self.module_list):
+    #         dist[i] = np.linalg.norm(coordinate - np.array((module.x, module.y)))
+    #     return np.argmin(dist)
+
+    # def get_avg_coordinates(self, ncells, times, noise, init_state=0, avg_over=1):
+    #     avg_coordinates = np.zeros((ncells, 2))
+    #     for icell in range(ncells):
+    #         traj = self.get_trajectory_noisy(times,
+    #                                          init_cond=(self.module_list[init_state].x, self.module_list[init_state].y),
+    #                                          noise=noise)
+    #         avg_coordinates[icell] = np.mean(traj[:, -avg_over:], axis=1)
+    #     return avg_coordinates

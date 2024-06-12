@@ -4,7 +4,7 @@ from copy import copy
 
 from cmcrameri import cm as scm
 from matplotlib.colors import ListedColormap, BoundaryNorm, CenteredNorm
-from skimage.measure import label
+# from skimage.measure import label
 
 plt.rcParams.update({'figure.dpi': 100})  # Change to 200 for high res figures
 

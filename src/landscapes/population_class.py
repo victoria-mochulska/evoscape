@@ -21,7 +21,6 @@ class Population:
         for i in range(N):
             self.landscape_list.append(self.problem_type(start_module_list, landscape_pars['A0'],
                                                          landscape_pars['init_cond'],
-                                                         landscape_pars['mode'],
                                                          landscape_pars['regime'], landscape_pars['n_regimes'],
                                                          landscape_pars['morphogen_times'],
                                                          landscape_pars['used_fp_types'],
