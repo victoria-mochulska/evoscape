@@ -1,10 +1,13 @@
 import multiprocessing as mp
 import os
 import pickle
+import json
 import time
 from copy import deepcopy
 
 import numpy as np
+
+from .module_helper_functions import modules_to_txt
 
 
 class Population:
@@ -79,11 +82,11 @@ class Population:
         fitness_traj = np.zeros(ngenerations)
         os.makedirs(saved_files_dir + self.problem_type.__name__ + '/' + timestr)
         save_dir = saved_files_dir + self.problem_type.__name__ + '/' + timestr + '/'
-        save_gens_file = open(save_dir + timestr + "_generations.txt", "a")
-        pickle_name = save_dir + timestr + "_module_list_"
-        save_gens_file.write(
-            '# Parallel evolution of ' + str(self.N) + ' landscapes for ' + self.problem_type.__name__ + '\n'
-            + '#Starting: ' + str(max([landscape.fitness for landscape in self.landscape_list])) + '\n')
+        # save_gens_file = open(save_dir + timestr + "_generations.txt", "a")
+        modules_filename = save_dir + timestr + "_module_list_"
+        # save_gens_file.write(
+        #     '# Parallel evolution of ' + str(self.N) + ' landscapes for ' + self.problem_type.__name__ + '\n'
+        #     + '#Starting: ' + str(max([landscape.fitness for landscape in self.landscape_list])) + '\n')
         with open(save_dir + timestr + "_parameters.pickle", "wb") as f:
             pickle.dump([self.landscape_pars, self.prob_pars, fitness_pars,
                          self.par_limits, self.par_choice_values], f)
@@ -104,21 +107,17 @@ class Population:
                 self.landscape_list[2 * ind] = result
 
             self.landscape_list.sort(key=lambda landscape: landscape.fitness + 0.002 * np.random.randn(), reverse=True)
-
-            #             print('after mutation:', [landscape.fitness for landscape in self.landscape_list])
             del (self.landscape_list[self.N // 2:])
+
             fitness_traj[igen] = self.landscape_list[0].fitness
             self.landscape_list = [deepcopy(landscape) for landscape in self.landscape_list for _ in range(2)]
-            save_gens_file.write(str(igen) + ' ' + str(np.round(self.landscape_list[0].fitness, 4)) + ' '
-                                 + str(len(self.landscape_list[0].module_list)) + '\n')
 
             if igen % save_each == 0:
-                with open(pickle_name + str(igen) + '.pickle', "wb") as f:
-                    pickle.dump(self.landscape_list[0].module_list, f)
+                modules_to_txt(self.landscape_list[0].module_list, modules_filename + str(igen) + '.txt')
+                # with open(modules_filename + str(igen) + '.pickle', "wb") as f:
+                #     pickle.dump(self.landscape_list[0].module_list, f)
 
-        save_gens_file.close()
         pool.close()
-
         pool.join()
 
         with open(save_dir + timestr + "_result_full.pickle", "wb") as f:

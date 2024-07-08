@@ -29,12 +29,23 @@ class Module:
         self.par_choice_values = {}
 
     def __str__(self):
-        par_str = self.__class__.__name__ + ' at ' + str((np.round(self.x, 5), np.round(self.y, 5)))
-        for par_name in self.mutable_parameters_list:
-            if par_name == 'x' or par_name == 'y':
-                continue
-            par_str += ', ' + par_name + ' = ' + str(np.round(getattr(self, par_name), 5))
-        return par_str
+        # TODO: add precision (decimals)
+        module_str = self.__class__.__name__ + ': '
+        pars_str = []
+        for par in self.mutable_parameters_list:
+            value = getattr(self, par)
+            if isinstance(value, np.ndarray):
+                par_str = np.array2string(value, separator=',')
+            else:
+                par_str = str(value)
+            pars_str.append(par + '=' + par_str)
+        module_str += ', '.join(pars_str)
+        # par_str = self.__class__.__name__ + ' at ' + str((np.round(self.x, 5), np.round(self.y, 5)))
+        # for par_name in self.mutable_parameters_list:
+        #     if par_name == 'x' or par_name == 'y':
+        #         continue
+        #     par_str += ', ' + par_name + ' = ' + str(np.round(getattr(self, par_name), 5))
+        return module_str
 
     # _________________________________________________________________________________________________________
     @classmethod
@@ -134,6 +145,9 @@ class Module:
             self.mutable_parameters_list.remove(par)
         else:
             print(par + ' is not included.')
+
+
+# _______________________________________________________________________________
 
 # _______________________________________________________________________________
 # ________________________ Fixed point types ____________________________________
