@@ -1,6 +1,6 @@
 import numpy as np
 
-from landscape_class import Landscape
+from . import Landscape
 
 
 class Somitogenesis_Landscape(Landscape):

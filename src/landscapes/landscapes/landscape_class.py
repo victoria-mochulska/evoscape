@@ -1,9 +1,9 @@
 import numpy as np
 import random
-from copy import deepcopy, copy
+from copy import deepcopy
 
-from morphogen_regimes import mr_sigmoid
-from module_class import Node
+from .. import mr_sigmoid
+from landscapes.modules.module_class import Node
 
 
 class Landscape:
