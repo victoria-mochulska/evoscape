@@ -23,16 +23,8 @@ def kl_distance(result, target, weights):
     return kl
 
 
-def plot_cell_proportions(data, state_names, state_colors, row_labels=None, prob=False):
-    if row_labels is None:
-        if data.shape[0] == 7:
-            row_labels = ['D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
-        elif data.shape[0] == 8:
-            row_labels = ['D1.5', 'D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
-        elif data.shape[0] == 9:
-            row_labels = ['D1', 'D1.5', 'D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
+def cell_proportions_table(data, state_names, state_colors, row_labels, ax):
     data_cumulative = data.cumsum(axis=1)
-    fig, ax = plt.subplots(figsize=(5, 3))
     ax.invert_yaxis()
     ax.xaxis.set_visible(False)
     ax.set_xlim(0, np.sum(data, axis=1).max())
@@ -43,17 +35,44 @@ def plot_cell_proportions(data, state_names, state_colors, row_labels=None, prob
         starts = data_cumulative[:, i] - widths
         rects = ax.barh(row_labels, widths, left=starts, height=0.7, label=colname,
                         color=color, alpha=0.35)
-
-        # if prob:
-        #     bar_labels = [str(int(val*100)) for val in rects.datavalues]
-        # else:
         bar_labels = [str(int(val * 100. / scale)) for val in rects.datavalues]
         for b in range(len(bar_labels)):
             if bar_labels[b] == '0' or bar_labels[b] == '0':
                 bar_labels[b] = ''
         ax.bar_label(rects, bar_labels, label_type='center', color='k')
-        ax.legend(ncol=len(state_names), bbox_to_anchor=(0, 1), loc='lower left', fontsize='small')
-    plt.show()
+    return ax
+
+
+def plot_cell_proportions(data, state_names, state_colors, row_labels=None, ax=None):
+    if row_labels is None:
+        if data.shape[0] == 7:
+            row_labels = ['D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
+        elif data.shape[0] == 8:
+            row_labels = ['D1.5', 'D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
+        elif data.shape[0] == 9:
+            row_labels = ['D1', 'D1.5', 'D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
+    fig, ax = plt.subplots(figsize=(5, 3))
+    ax = cell_proportions_table(data, state_names, state_colors, row_labels, ax=ax)
+    ax.legend(ncol=len(state_names), bbox_to_anchor=(0, 1), loc='lower left', fontsize='small')
+    return fig
+
+
+def plot_compare_cell_proportions(data, sim, state_names, state_colors, row_labels=None):
+    if row_labels is None:
+        if data.shape[0] == 7:
+            row_labels = ['D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
+        elif data.shape[0] == 8:
+            row_labels = ['D1.5', 'D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
+        elif data.shape[0] == 9:
+            row_labels = ['D1', 'D1.5', 'D2', 'D2.5', 'D3', 'D3.5', 'D4.', 'D4.5', 'D5']  ###
+    fig, ax = plt.subplots(1,2, figsize=(10, 3))
+    data_ax = cell_proportions_table(data, state_names, state_colors, row_labels, ax=ax[0])
+    data_ax.set_title('Experiment', fontsize=15)
+    sim_ax = cell_proportions_table(sim, state_names, state_colors, row_labels, ax=ax[1])
+    sim_ax.set_title('Simulation', fontsize=15)
+    # sim_ax.legend(ncol=len(state_names), bbox_to_anchor=(0, 0), loc='upper left', fontsize='small')
+
+    return fig
 
 
 def get_cell_data(filename):

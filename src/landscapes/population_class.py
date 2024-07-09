@@ -79,19 +79,23 @@ class Population:
         """ Evolutionary optimization using all CPUs """
         timestr = time.strftime("%Y%m%d-%H%M%S")
         print('Timecode:', timestr)
+        save_dir = saved_files_dir + self.problem_type.__name__ + '/' + timestr   # + '/'
+        os.makedirs(save_dir)
+        modules_filename = save_dir + '/' + timestr + "_module_list_"
+
+        #  Save the setup parameters:
+        with open(save_dir + '/' + timestr + "_init_landscape_pars.txt", "w") as f:
+            f.write(repr(self.landscape_pars))
+        with open(save_dir + '/' + timestr + "_init_prob_pars.txt", "w") as f:
+            f.write(repr(self.prob_pars))
+        with open(save_dir + '/' + timestr + "_init_par_limits.txt", "w") as f:
+            f.write(repr(self.par_limits))
+        with open(save_dir + '/' + timestr + "_init_par_choice_values.txt", "w") as f:
+            f.write(repr(self.par_choice_values))
+        with open(save_dir + '/' + timestr + "_init_fitness_pars.txt", "w") as f:
+            f.write(repr(fitness_pars))
+
         fitness_traj = np.zeros(ngenerations)
-        os.makedirs(saved_files_dir + self.problem_type.__name__ + '/' + timestr)
-        save_dir = saved_files_dir + self.problem_type.__name__ + '/' + timestr + '/'
-        # save_gens_file = open(save_dir + timestr + "_generations.txt", "a")
-        modules_filename = save_dir + timestr + "_module_list_"
-        # save_gens_file.write(
-        #     '# Parallel evolution of ' + str(self.N) + ' landscapes for ' + self.problem_type.__name__ + '\n'
-        #     + '#Starting: ' + str(max([landscape.fitness for landscape in self.landscape_list])) + '\n')
-        with open(save_dir + timestr + "_parameters.pickle", "wb") as f:
-            pickle.dump([self.landscape_pars, self.prob_pars, fitness_pars,
-                         self.par_limits, self.par_choice_values], f)
-        with open(save_dir + timestr + "_initial_full.pickle", "wb") as f:
-            pickle.dump(self, f)
 
         pool = mp.Pool(mp.cpu_count())
 
@@ -114,17 +118,30 @@ class Population:
 
             if igen % save_each == 0:
                 modules_to_txt(self.landscape_list[0].module_list, modules_filename + str(igen) + '.txt')
-                # with open(modules_filename + str(igen) + '.pickle', "wb") as f:
-                #     pickle.dump(self.landscape_list[0].module_list, f)
 
         pool.close()
         pool.join()
 
-        with open(save_dir + timestr + "_result_full.pickle", "wb") as f:
-            pickle.dump(self, f)
+        with open(save_dir + '/' + timestr + "_result_landscape.pickle", "wb") as f:
+            pickle.dump(self.landscape_list[0], f)
         print('Best fitness:', max([landscape.fitness for landscape in self.landscape_list]))
-        return fitness_traj
+        return fitness_traj, save_dir
 
+    # _______________________________________________________________________________________________________________
+
+    # save_gens_file = open(save_dir + timestr + "_generations.txt", "a")
+    # save_gens_file.write(
+    #     '# Parallel evolution of ' + str(self.N) + ' landscapes for ' + self.problem_type.__name__ + '\n'
+    #     + '#Starting: ' + str(max([landscape.fitness for landscape in self.landscape_list])) + '\n')
+
+    # with open(save_dir + timestr + "_parameters.pickle", "wb") as f:
+    #     pickle.dump([self.landscape_pars, self.prob_pars, fitness_pars,
+    #                  self.par_limits, self.par_choice_values], f)
+    # with open(save_dir + timestr + "_initial_full.pickle", "wb") as f:
+    #     pickle.dump(self, f)
+
+    # with open(modules_filename + str(igen) + '.pickle', "wb") as f:
+    #     pickle.dump(self.landscape_list[0].module_list, f)
 # ____________________________________________________________________________________________________________________
 
 # def evolve_noisy_parallel(self, ngenerations, saved_files_dir, save_each=10, noise=0.05, n_sym=5, ndt=10):   ####  make this a case in evolve_parallel
