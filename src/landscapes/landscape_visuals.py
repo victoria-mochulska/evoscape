@@ -221,6 +221,8 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
     :return:
     """
     dX, dY = np.zeros((len(times), *xx.shape)), np.zeros((len(times), *xx.shape))
+    
+    figures = []
 
     for it in range(len(times)):
 
@@ -239,6 +241,7 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
                                       fill=True, alpha=0.3 * np.sqrt(A), clip_on=True, linewidth=0))
 
         fig, ax = plt.subplots(1, 4, figsize=(18, 4))
+        figures.append(fig)
         ax[0].imshow(potential, cmap=scm.cork.reversed(), origin='lower', norm=CenteredNorm(0),
                      extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
         ax[0].contour(xx, yy, -potential, origin='lower', colors='w')
@@ -306,7 +309,7 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
 
         plt.show()
 
-    return dX, dY
+    return figures
 
 
 def plot_cells(landscape, L, colors=None):
@@ -324,7 +327,7 @@ def plot_cells(landscape, L, colors=None):
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_aspect(1)
-    plt.show()
+    return fig
 
 
 def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, frozen=False, t_freeze=None, colors=None):
@@ -350,7 +353,7 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, frozen=False, t_f
     ax[0].set_yticks([])
     ax[1].set_xticks([])
     ax[1].set_yticks([])
-    plt.show()
+    return fig
 
 
 # old function - plotting trajectories with colored segments

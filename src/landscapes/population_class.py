@@ -125,7 +125,7 @@ class Population:
         with open(save_dir + '/' + timestr + "_result_landscape.pickle", "wb") as f:
             pickle.dump(self.landscape_list[0], f)
         print('Best fitness:', max([landscape.fitness for landscape in self.landscape_list]))
-        return fitness_traj, save_dir
+        return fitness_traj, timestr, save_dir
 
     # _______________________________________________________________________________________________________________
 
