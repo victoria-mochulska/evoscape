@@ -52,7 +52,7 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types'):
             color = 'grey'
 
         circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
-                                  fill=True, alpha=0.3 * np.sqrt(A), clip_on=True, linewidth=0))
+                                  fill=True, alpha=0.25 * np.sqrt(A), clip_on=True, linewidth=0))
     morphogen_times = landscape.morphogen_times
     landscape.morphogen_times = np.arange(landscape.n_regimes) + 0.5
     (dX, dY), potential, rot_potential = landscape(float(regime), (xx, yy), return_potentials=True)
@@ -75,7 +75,7 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types'):
     stream_ax.set_xticks([])
     stream_ax.set_yticks([])
     landscape.morphogen_times = morphogen_times
-    plt.show()
+    # plt.show()
     return fig
 
 
@@ -102,7 +102,7 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', traj_ti
             color = 'grey'
 
         circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
-                                  fill=True, alpha=0.3 * np.sqrt(A), clip_on=True, linewidth=0))
+                                  fill=True, alpha=0.25 * np.sqrt(A), clip_on=True, linewidth=0))
     (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
 
     fig, stream_ax = plt.subplots(1, 1, figsize=(4, 4))
@@ -238,31 +238,31 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
             else:
                 color = 'grey'
             circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
-                                      fill=True, alpha=0.3 * np.sqrt(A), clip_on=True, linewidth=0))
+                                      fill=True, alpha=0.25 * np.sqrt(A), clip_on=True, linewidth=0))
 
-        fig, ax = plt.subplots(1, 4, figsize=(18, 4))
-        figures.append(fig)
+        vrange = (np.max(rot_potential) - np.min(rot_potential))/2.
+        if vrange == 0.:
+            fig, ax = plt.subplots(1, 3, figsize=(14, 4))
+            circles_ax = ax[1]
+            stream_ax = ax[2]
+            # vrange = 1.
+        else:
+            fig, ax = plt.subplots(1, 4, figsize=(18, 4))
+            circles_ax = ax[2]
+            stream_ax = ax[3]
+            ax[1].imshow(rot_potential, cmap='RdBu_r', origin='lower', norm=CenteredNorm(0, vrange),
+                         extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
+            ax[1].contour(xx, yy, rot_potential, colors='w', linestyles='solid', origin='lower')
+
         ax[0].imshow(potential, cmap=scm.cork.reversed(), origin='lower', norm=CenteredNorm(0),
                      extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
         ax[0].contour(xx, yy, -potential, origin='lower', colors='w')
 
-        vrange = (np.max(rot_potential) - np.min(rot_potential))/2.
-        if vrange == 0.:
-            vrange = 1.
-        ax[1].imshow(rot_potential, cmap='RdBu_r', origin='lower', norm=CenteredNorm(0, vrange),
-                     extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
-        ax[1].contour(xx, yy, rot_potential, colors='w', linestyles='solid', origin='lower')
-
-        for iax in range(4):
+        for iax in range(len(ax)):
             ax[iax].set_xticks([])
             ax[iax].set_yticks([])
             ax[iax].set_xlim((np.min(xx), np.max(xx)))
             ax[iax].set_ylim((np.min(yy), np.max(yy)))
-
-            # for i, module in enumerate(landscape.module_list):
-            #     ax[iax].scatter(module.x, module.y, marker='x', c='k')
-        circles_ax = ax[2]
-        stream_ax = ax[3]
 
         for i in range(len(landscape.module_list)):
             circles_ax.add_patch(copy(circles[i]))
@@ -307,7 +307,8 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
                                                ndt=50, frozen=True, t_freeze=times[it])
             stream_ax.plot(traj[0, 0, traj_start:], traj[1, 0, traj_start:], lw=2.5, color='forestgreen')
 
-        plt.show()
+        figures.append(fig)
+        # plt.show()
 
     return figures
 

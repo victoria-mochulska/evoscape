@@ -97,7 +97,8 @@ class Population:
 
         fitness_traj = np.zeros(ngenerations)
 
-        pool = mp.Pool(mp.cpu_count())
+        n_processes = np.min((self.N//2, mp.cpu_count()))
+        pool = mp.Pool(n_processes)
 
         for igen in range(ngenerations):
             results = []
