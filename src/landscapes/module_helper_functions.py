@@ -8,9 +8,20 @@ def module_from_string(module_str):
     # module_cls = globals()[module_name]
     module_cls = getattr(modules, module_name)
 
-    pars_str = [par_str for par_str in module_pars.split(', ') if par_str]
+    pars_str = [par_str for par_str in module_pars.split(', ') if par_str]     #
+    # print(pars_str)
+    n_str = len(pars_str)
+    for i in range(n_str):
+        #   this is to fix extra whitespaces in arrays
+        if i < n_str-1 and '=' in pars_str[i] and '=' not in pars_str[i+1]:
+            par_str = pars_str[i] + ',' + pars_str[i+1]
+            if i < n_str-2 and '=' not in pars_str[i+2]:
+                par_str = par_str + ',' + pars_str[i + 2]
+        elif '=' not in pars_str[i]:
+            continue
+        else:
+            par_str = pars_str[i]
 
-    for par_str in pars_str:
         par_name, _, par_value = par_str.partition('=')
         if '[' in par_value:
             par_value = np.fromstring(par_value.strip('[]'), sep=',')

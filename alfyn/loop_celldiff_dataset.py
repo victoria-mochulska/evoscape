@@ -12,7 +12,7 @@ from landscapes.helper_functions import plot_compare_cell_proportions, get_cell_
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files/'
+save_dir = 'saved_files_1/'
 
 #  Hyperparameters
 day = 2.
