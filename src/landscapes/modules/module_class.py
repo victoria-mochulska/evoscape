@@ -35,16 +35,11 @@ class Module:
         for par in self.mutable_parameters_list:
             value = getattr(self, par)
             if isinstance(value, np.ndarray):
-                par_str = np.array2string(value, separator=',')
+                par_str = np.array2string(value, separator=',', floatmode='maxprec_equal')
             else:
                 par_str = str(value)
             pars_str.append(par + '=' + par_str)
-        module_str += ', '.join(pars_str)
-        # par_str = self.__class__.__name__ + ' at ' + str((np.round(self.x, 5), np.round(self.y, 5)))
-        # for par_name in self.mutable_parameters_list:
-        #     if par_name == 'x' or par_name == 'y':
-        #         continue
-        #     par_str += ', ' + par_name + ' = ' + str(np.round(getattr(self, par_name), 5))
+        module_str += '; '.join(pars_str)
         return module_str
 
     # _________________________________________________________________________________________________________
