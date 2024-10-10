@@ -15,13 +15,19 @@ def mr_sigmoid(t, a, s, t0, tau, **kwargs):
     return s_t, a_t
 
 
-def mr_piecewise(t, a, s, t0, t1, **kwargs):
+def mr_piecewise(t, a, s, t0, t1=None, t2=None, t3=None, **kwargs):
     if a.size == 2:
         a_t = np.piecewise(t, [t < t0, t >= t0], list(a))
         s_t = np.piecewise(t, [t < t0, t >= t0], list(s))
     elif a.size == 3:
         a_t = np.piecewise(t, [t < t0, (t >= t0) & (t < t1), t >= t1], list(a))
         s_t = np.piecewise(t, [t < t0, (t >= t0) & (t < t1), t >= t1], list(s))
+    elif a.size == 4:
+        a_t = np.piecewise(t, [t < t0, (t >= t0) & (t < t1), (t >= t1) & (t < t2), t >= t2], list(a))
+        s_t = np.piecewise(t, [t < t0, (t >= t0) & (t < t1), (t >= t1) & (t < t2), t >= t2], list(s))
+    elif a.size == 5:
+        a_t = np.piecewise(t, [t < t0, (t >= t0) & (t < t1), (t >= t1) & (t < t2), (t >= t2) & (t < t3), t >= t3], list(a))
+        s_t = np.piecewise(t, [t < t0, (t >= t0) & (t < t1), (t >= t1) & (t < t2), (t >= t2) & (t < t3), t >= t3], list(s))
     else:
         raise NotImplementedError
     return s_t, a_t

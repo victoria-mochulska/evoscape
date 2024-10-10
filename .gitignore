@@ -6,3 +6,5 @@ local_tests
 /examples/saved_files/
 /alfyn_test/
 /alfyn_results/
+/alfyn_results_new/
+/alfyn_results_wide_prior/

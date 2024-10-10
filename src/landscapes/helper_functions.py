@@ -75,17 +75,15 @@ def plot_compare_cell_proportions(data, sim, state_names, state_colors, row_labe
     return fig
 
 
-def get_cell_data(filename):
+def get_cell_data(filename, remove_cols=(2,), col_order=(0, 1, 4, 2, 3)):
     cell_data = np.loadtxt(filename) * 100
-    cell_data = np.delete(cell_data, 2, axis=1)
+    # remove AN column
+    for col in remove_cols:
+        cell_data = np.delete(cell_data, col, axis=1)
     # move CE to after Tr instead
     # col_labels = ['EPI', 'Tr', 'PN', 'M', 'CE']
-    idx = [0, 1, 4, 2, 3]
-    cell_data = cell_data[:, idx]
+    cell_data = cell_data[:, list(col_order)]
     # col_labels = ['EPI', 'Tr', 'CE', 'PN', 'M']
-    # print(col_labels)
-    # print(cell_data)
-    # col_colors = ['indianred', 'tab:orange', 'gold', 'tab:green', 'tab:blue']
     return cell_data
 
 

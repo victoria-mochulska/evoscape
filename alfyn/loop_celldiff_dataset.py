@@ -12,14 +12,14 @@ from landscapes.helper_functions import plot_compare_cell_proportions, get_cell_
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files_1/'
+save_dir = 'saved_files_2/'
 
 #  Hyperparameters
 day = 2.
 noise = 0.2
 
 #  Computation parameters
-N = 200  # 50
+N = 200  # population size
 n_sim = 200
 ndt = 200   # 200
 ncells = 300
@@ -38,6 +38,30 @@ par_limits_2 = {
     'a': (0., 16.),
     's': (0.1, 1.5),
 }
+
+# _______________________________________________________________________________
+
+# Regime 1 - FGF, no Chir               (red bar)
+# t0
+# Regime 2 - Chir + FGF                (purple+red bar)
+# t1
+# Regime 3 - Chir (+PD)                (purple+green)
+
+# #   Training data  # #
+
+#  Initial training: regimes 1, 2, 3
+
+#  Ch 2-5 FGF 0-3:
+#  regime 1 until day 2, regime 1 day 2-3, regime 3 day 3-5
+# t0 = day 2, t1 = day 3
+
+#  Ch 2-5 FGF 0-4:
+#  regime 1 until day 2, regime 1 day 2- 4, regime 3 day 4-5
+# t0 = day 2, t1 = day 4
+
+#  Ch 2-5 FGF 0-5:
+#  regime 1 until day 2, regime 1 day 2-5
+# t0 = day 2, t1 = day 5
 
 # ________________________________________________________________________________
 

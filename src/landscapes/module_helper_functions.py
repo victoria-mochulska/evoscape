@@ -9,7 +9,7 @@ def module_from_string(module_str):
     module_cls = getattr(modules, module_name)
 
     pars_str = [par_str.strip() for par_str in module_pars.split(';') if par_str]     #
-    print(pars_str)
+    # print(pars_str)
     n_str = len(pars_str)
     for par_str in pars_str:
         par_name, _, par_value = par_str.partition('=')

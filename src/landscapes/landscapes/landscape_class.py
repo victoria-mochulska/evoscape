@@ -238,7 +238,7 @@ class Landscape:
 
         return states
 
-    def get_cell_states(self, t, coordinate=None, measure='gaussian'):
+    def get_cell_states(self, t, coordinate=None, measure='gaussian', prob_threshold=0., abs_threshold=0.):
         """
         Return cell states given cell coordinates. Assignent based on a chosen distance measure, can depend on time or signals.
         :param t: float, timepoint
@@ -264,10 +264,13 @@ class Landscape:
                 prob[:, i] = np.exp(
                     -np.sum((coordinate.T - np.array((module.x, module.y))) ** 2, axis=1) / 2. / st ** 2) / st ** 2
             # print(prob/2/np.pi)
+            prob[:, -1] = abs_threshold  # below this value cells will be assigned as 'unclustered'
             prob = (prob.T / np.sum(prob, axis=1)).T
-            prob[:, -1] = 0. # probability threshold: for probs below this value cells will be assigned as 'unclustered'
+            if abs_threshold == 0:
+                prob[:, -1] = prob_threshold  # probability threshold: for probs below this value cells will be assigned as 'unclustered'
             # print(prob*100)
             states = np.argmax(prob, axis=1)
+            states[states == len(self.module_list)] = -1
         return states
 
     def run_cells(self, t0, tf, nt, noise=0., ndt=50, frozen=False, t_freeze=None):

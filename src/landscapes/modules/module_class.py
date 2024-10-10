@@ -24,6 +24,8 @@ class Module:
         self.mutable_parameters_list = [par for par in vars(self).keys() if vars(self)[par] is not None]
         for par in immutable_pars_list:
             self.remove_mutable_parameter(par)
+        self.immutable_idx = []  # for partly mutable vector parameters: indices of elements to keep fixed
+
         # parameter priors (limits or choice values) can be specified for each module separately:
         self.par_limits = {}
         self.par_choice_values = {}
@@ -82,7 +84,7 @@ class Module:
             module.remove_mutable_parameter(par)
         return module
 
-    def get_current_pars(self, t, regime, t0=None, t1=None, t2=None):
+    def get_current_pars(self, t, regime, t0=None, t1=None, t2=None, t3=None, t4=None):
         """
         Calculate the amplitude and size of the module at time t, based on the a and s parameters and a chosen regime.
         :param t: float
@@ -96,7 +98,7 @@ class Module:
             V = self.a * self.s ** 2
             return V, self.s, self.a
 
-        s_t, a_t = regime(t, self.a, self.s, t0=t0, t1=t1, t2=t2, tau=self.tau)
+        s_t, a_t = regime(t, self.a, self.s, t0=t0, t1=t1, t2=t2, t3=t3, t4=t4, tau=self.tau)
         V = a_t * s_t ** 2
         return V, s_t, a_t
 
@@ -125,6 +127,10 @@ class Module:
         attr = getattr(self, rand_par)
         if isinstance(attr, np.ndarray):
             index = np.random.randint(attr.size)
+            #  resample if the element is immutable:
+            while index in self.immutable_idx:
+                index = np.random.randint(attr.size)
+            #
             attr[index] = new_val
         else:
             setattr(self, rand_par, new_val)
@@ -140,6 +146,17 @@ class Module:
             self.mutable_parameters_list.remove(par)
         else:
             print(par + ' is not included.')
+
+    def set_immutable_idx(self, idx):
+        idx = list(idx)
+        idx.sort()
+        if idx == list(range(self.a.size)):
+            print('All vector elements are immutable - setting immutable parameters')
+            self.remove_mutable_parameter('a')
+            self.remove_mutable_parameter('s')
+        else:
+            self.immutable_idx = idx
+
 
 
 # _______________________________________________________________________________

@@ -4,7 +4,7 @@ from copy import copy
 
 from cmcrameri import cm as scm
 from matplotlib.colors import ListedColormap, BoundaryNorm, CenteredNorm
-# from skimage.measure import label
+from skimage.measure import label
 
 plt.rcParams.update({'figure.dpi': 100})  # Change to 200 for high res figures
 
@@ -23,8 +23,10 @@ order_colors = (
     'gold',
     'tab:green',
     'tab:blue',
+    # 'grey',
     'tab:purple',
     'm',
+    # 'grey'
 )
 
 
@@ -273,19 +275,23 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
             # print('Min velocity:', round(np.min(velocities), 3), ', Max:', round(np.max(velocities), 3),
             #       ', Mean:', round(np.mean(velocities), 3), ', Median:', round(np.median(velocities), 3))
 
-            stream_ax.imshow(velocities, alpha=0.5, cmap='Greys', origin='lower',
+            stream_ax.imshow(velocities, alpha=0.3, cmap='Greys', origin='lower',
                              extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
 
             # An attempt to plot fixed points - often ends up missing some points
-            # fp_labels, nlabels = label(velocities_sq < 1e-3, return_num=True)
+            # fp_labels, nlabels = label(velocities_sq < 0.5, return_num=True)
             # for l in range(nlabels):
-            #     # if np.sum(fp_labels == l) <= 50:
-            #     fp = velocities_sq == np.min(velocities_sq[fp_labels == l])
-            #     # if np.sum(fp_labels == l) > 20:
-            #     #     fp = (velocities_sq < 5e-4) * fp_labels == l
-            #     # else:
-            #     #     fp = fp_labels == l
-            #     stream_ax.scatter(xx[fp], yy[fp], marker='o', s=50, color='gold', edgecolor=None, zorder=10)
+            #     if np.sum(fp_labels == l) <= 1000:
+            #         fp = fp_labels == l
+            #         stream_ax.imshow(fp, alpha=0.5, cmap='Blues', origin='lower',
+            #                          extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
+            # if np.sum(fp_labels == l) <= 50:
+            # fp = velocities_sq == np.min(velocities_sq[fp_labels == l])
+            # if np.sum(fp_labels == l) > 20:
+            #     fp = (velocities_sq < 5e-4) * fp_labels == l
+            # else:
+            #     fp = fp_labels == l
+            # stream_ax.scatter(xx[fp], yy[fp], marker='o', s=50, color='gold', edgecolor=None, zorder=10)
 
         circles_ax.streamplot(xx, yy, dX[it], dY[it], density=density, arrowsize=2., arrowstyle='->',
                               linewidth=1,
