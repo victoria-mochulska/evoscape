@@ -12,32 +12,31 @@ from landscapes.helper_functions import plot_compare_cell_proportions, get_cell_
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files_2/'
+save_dir = 'saved_files_4/'
 
 #  Hyperparameters
-day = 2.
+delta = 2.
 noise = 0.2
 
 #  Computation parameters
 N = 200  # population size
-n_sim = 200
+n_sim = 400
 ndt = 200   # 200
 ncells = 300
+ngens0 = 101
+ngens = 301
+
+L = 4.
 
 #  Priors
-par_limits_1 = {
-    'x': (-2., 2.),
-    'y': (-2., 2.),
-    'a': (0., 9.),
-    's': (0.1, 1.5),
-}
-
-par_limits_2 = {
-    'x': (-4., 4.),
-    'y': (-4., 4.),
+par_limits = {
+    'x': (-L, L),
+    'y': (-L, L),
     'a': (0., 16.),
     's': (0.1, 1.5),
 }
+
+par_choice_values = {}
 
 # _______________________________________________________________________________
 
@@ -67,37 +66,58 @@ par_limits_2 = {
 
 #  Loading the dataset of 3 experiments
 filenames = ('Ch2-5_FGF0-3.txt', 'Ch2-5_FGF0-4.txt', 'Ch2-5_FGF0-5.txt')
+
+col_labels = ['EPI', 'Tr', 'CE', 'PN', 'M']
+row_labels = ['Day 1.5', 'Day 2', 'Day 2.5', 'Day 3', 'Day 3.5', 'Day 4', 'Day 4.5', 'Day 5']
+col_colors = ['indianred', 'tab:orange', 'gold', 'tab:green', 'tab:blue']
 cell_dataset = []
+
 for filename in filenames:
     cell_data = get_cell_data(filename)
     cell_data = np.insert(cell_data, 0, cell_data[0], axis=0)  ## s
-    col_labels = ['EPI', 'Tr', 'CE', 'PN', 'M']
-    row_labels = ['D1.5', 'D2', 'D2.5', 'D3', 'D3.5', 'D4', 'D4.5', 'D5']
-    col_colors = ['indianred', 'tab:orange', 'gold', 'tab:green', 'tab:blue']
-
     for row in cell_data:
         row *= 1. / np.sum(row)  # rescale everything to sum up to 1
-
     cell_dataset.append(cell_data)
 
 #  Make a subset of data: first 4 timepoints and 3 cell states
 filename = 'Ch2-5_FGF0-3.txt'
 cell_data = get_cell_data(filename)
 cell_data = np.insert(cell_data, 0, cell_data[0], axis=0)  ## s
-col_labels = ['EPI', 'Tr', 'CE', 'PN', 'M']
-col_colors = ['indianred', 'tab:orange', 'gold', 'tab:green', 'tab:blue']
 
 cell_data_4 = cell_data[:4]
-row_labels_4 = ['D1.5', 'D2', 'D2.5', 'D3']
+row_labels_4 = ['Day 1.5', 'Day 2', 'Day 2.5', 'Day 3']
 cell_data_4[-1, 2] = 87
 cell_data_4[-1, -1] = 0
 cell_data_4 = cell_data_4[:, :3]
 col_labels_4 = col_labels[:3]
-
 for row in cell_data_4:
     row *= 1. / np.sum(row)
-
 cell_dataset_0 = (cell_data_4,)
+
+
+morphogen_times_0 = ((delta * 1, delta * 3),)  # Signal is changing at timepoint 1 and timepoint 3
+time_pars_0 = (0., delta * 3, 4)
+
+#   2 morphogen changing times for each of the 3 experiments
+morphogen_times = ((delta * 1, delta * 3), (delta * 1, delta * 5), (delta * 1, delta * 7))
+time_pars = (0., delta * 7, 8)
+
+# ___________________________________________________________________________
+landscape_pars_celldiff = {
+    'A0': 0.005,
+    'init_cond': (0., 0.),
+    'regime': mr_piecewise,
+    'n_regimes': 3,  # !
+    'morphogen_times': morphogen_times_0[0],
+    'used_fp_types': [Node],
+    'immutable_pars_list': [],
+}
+
+prob_pars_celldiff = {
+    'prob_add': 0.,
+    'prob_drop': 0.,
+    'prob_shuffle': 0.
+}
 
 # In[]:
 
@@ -106,30 +126,6 @@ if __name__ == '__main__':
     for sim in range(n_sim):
 
         # Set up for optimizing the first 4 timepoints
-
-        time_pars_0 = (0., day * 3, 4)
-        morphogen_times_0 = ((day * 1, day * 3),)  # Signal is changing at timepoint 1 and timepoint 3
-
-        par_limits = par_limits_1
-
-        par_choice_values = {}
-
-        landscape_pars_celldiff = {
-            'A0': 0.005,
-            'init_cond': (0., 0.),
-            'regime': mr_piecewise,
-            'n_regimes': 3,  # !
-            'morphogen_times': morphogen_times_0[0],
-            'used_fp_types': [Node],
-            'immutable_pars_list': [],
-        }
-
-        prob_pars_celldiff = {
-            'prob_add': 0.,
-            'prob_drop': 0.,
-            'prob_shuffle': 0.
-        }
-
         fitness_pars_celldiff = {
             'ncells': ncells,  #
             'cell_data': cell_dataset_0,
@@ -158,7 +154,7 @@ if __name__ == '__main__':
                        start_module_list=start_module_list)
 
         print('# '+str(sim))
-        fitness_traj, timecode1, results_dir = P.evolve_parallel(101, fitness_pars_celldiff, save_dir, save_each=50)
+        fitness_traj, timecode1, results_dir = P.evolve_parallel(ngens0, fitness_pars_celldiff, save_dir, save_each=50)
         # print('Done')
 
         fig = plt.figure(figsize=(4, 3))
@@ -170,21 +166,19 @@ if __name__ == '__main__':
         fig.savefig(results_dir + '/result_fitness_traj.png', bbox_inches='tight')
         plt.close(fig)
 
+        landscape = P.landscape_list[0]
+
         #  Plot result Vs target proportions
-        fig = plot_compare_cell_proportions(cell_data_4, P.landscape_list[0].result[0], col_labels_4, col_colors,
+        fig = plot_compare_cell_proportions(cell_data_4, landscape.result[0], col_labels_4, col_colors,
                                             row_labels_4)
         # fig.show()
         fig.savefig(results_dir + '/result_proportions.png', bbox_inches='tight')
         plt.close(fig)
 
-        landscape = P.landscape_list[0]
-        # print(landscape)
-
-        L = 4.
         npoints = 201
         q = np.linspace(-L, L, npoints)
         xx, yy = np.meshgrid(q, q, indexing='xy')
-        times = np.array((0., day * 1.1))
+        times = np.array((0., delta * 1.1))
         figures = visualize_all(landscape, xx, yy, times, density=0.45, plot_traj=False, color_scheme='order')
 
         for i in range(len(figures)):
@@ -193,8 +187,8 @@ if __name__ == '__main__':
 
         landscape.morphogen_times = fitness_pars_celldiff['morphogen_times'][0]
         n = 30
-        landscape.init_cells(n, 0, 0.1)
-        fig = get_and_plot_traj(landscape, 0, day * 3, 11, L, 0.1, frozen=False)
+        landscape.init_cells(n, 0, noise)
+        fig = get_and_plot_traj(landscape, 0, delta * 3, 11, L, noise, frozen=False)
         # fig.show()
         fig.savefig(results_dir + '/result_cell_trajectories.png', bbox_inches='tight')
         plt.close(fig)
@@ -208,9 +202,6 @@ if __name__ == '__main__':
 
         # Set up for the full optimization
         # To each landscape, add two randomly generated modules (green and blue)
-
-        par_limits = par_limits_2
-        P.par_limits = par_limits
 
         for landscape in P.landscape_list:
             start_module_list = landscape.module_list
@@ -229,11 +220,6 @@ if __name__ == '__main__':
         for landscape in P.landscape_list:
             landscape.fitness = -np.inf
 
-        time_pars = (0., day * 7, 8)
-
-        #   2 morphogen changing times for each of the 3 experiments
-        morphogen_times = ((day * 1, day * 3), (day * 1, day * 5), (day * 1, day * 7))
-
         fitness_pars_celldiff = {
             'ncells': ncells,  #
             'cell_data': cell_dataset,  # full dataset
@@ -247,9 +233,10 @@ if __name__ == '__main__':
             'ndt': ndt,
         }
 
-        fitness_traj, timecode2, results_dir = P.evolve_parallel(301, fitness_pars_celldiff, save_dir, save_each=50)
+        fitness_traj, timecode2, results_dir = P.evolve_parallel(ngens, fitness_pars_celldiff, save_dir, save_each=50)
         # print('Done')
 
+        # Fitness plot
         fig = plt.figure(figsize=(4, 3))
         plt.plot(fitness_traj, lw=2, c='steelblue')
         plt.xlabel('Generation', fontsize=12)
@@ -258,54 +245,45 @@ if __name__ == '__main__':
         fig.savefig(results_dir + '/result_fitness_traj.png', bbox_inches='tight')
         plt.close(fig)
 
+        landscape = P.landscape_list[0]
+
         #  Plot result Vs target proportions
         for k in range(len(cell_dataset)):
-            fig = plot_compare_cell_proportions(cell_dataset[k], P.landscape_list[0].result[k], col_labels, col_colors,
+            fig = plot_compare_cell_proportions(cell_dataset[k], landscape.result[k], col_labels, col_colors,
                                                 row_labels=None)
             fig.show()
             fig.savefig(results_dir + '/result_proportions_' + str(k) + '.png', bbox_inches='tight')
             plt.close(fig)
 
-        landscape = P.landscape_list[0]
+        # Plot the landscape (all regimes)
+        times = np.array((0., delta * 2, delta * 10))
 
-        L = 4.
         npoints = 201
         q = np.linspace(-L, L, npoints)
         xx, yy = np.meshgrid(q, q, indexing='xy')
-        times = np.array((0., day * 2, day * 10))
         figures = visualize_all(landscape, xx, yy, times, density=0.45, plot_traj=False, color_scheme='order')
-
         for i in range(len(figures)):
             figures[i].savefig(results_dir + '/result_landscape_' + str(i) + '.png')
             plt.close(figures[i])
 
-        #  Plot trajectories of the first experiment
-        landscape.morphogen_times = fitness_pars_celldiff['morphogen_times'][0]
+        #  ________________________________________________________________________________________________________
+
+        # Plot trajectories from several experiments
+        experiments = (0, 2)
         n = 50
-        landscape.init_cells(n, 0, 0.1)
-        fig = get_and_plot_traj(landscape, 0, day * 7, 51, L, 0.1, frozen=False)
-        # fig.show()
-        fig.savefig(results_dir + '/result_cell_trajectories_1.png', bbox_inches='tight')
-        plt.close(fig)
 
-        fig = plot_cells(landscape, L)
-        # fig.show()
-        fig.savefig(results_dir + '/result_final_state_1.png', bbox_inches='tight')
-        plt.close(fig)
+        for exp in experiments:
+            landscape.morphogen_times = fitness_pars_celldiff['morphogen_times'][exp]
+            landscape.init_cells(n, 0, noise)
+            fig = get_and_plot_traj(landscape, 0, delta * 7, 51, L, noise, frozen=False)
+            # fig.show()
+            fig.savefig(results_dir + '/result_cell_trajectories_'+str(exp)+'.png', bbox_inches='tight')
+            plt.close(fig)
 
-        #  Plot trajectories of the third experiment
-        landscape.morphogen_times = fitness_pars_celldiff['morphogen_times'][2]
-        n = 50
-        landscape.init_cells(n, 0, 0.1)
-        fig = get_and_plot_traj(landscape, 0, day * 7, 51, L, 0.1, frozen=False)
-        # fig.show()
-        fig.savefig(results_dir + '/result_cell_trajectories_2.png', bbox_inches='tight')
-        plt.close(fig)
-
-        fig = plot_cells(landscape, L)
-        # fig.show()
-        fig.savefig(results_dir + '/result_final_state_2.png', bbox_inches='tight')
-        plt.close(fig)
+            fig = plot_cells(landscape, L)
+            # fig.show()
+            fig.savefig(results_dir + '/result_final_state_'+str(exp)+'.png', bbox_inches='tight')
+            plt.close(fig)
 
         plt.close('all')
 

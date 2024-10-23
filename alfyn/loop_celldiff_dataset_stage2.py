@@ -14,9 +14,9 @@ from landscapes.module_helper_functions import modules_from_txt
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files_test/'
-data_dir = '../alfyn_results_wide_prior/saved_files_2/CellDiff_Dataset_Landscape/'
-file_name = data_dir + 'optimization_log.csv'  # to load Stage 1 landscapes
+save_dir = 'saved_files_5/'    # where to save simulations including purple module
+data_dir = 'saved_files_4/CellDiff_Dataset_Landscape/'   # to load Stage 1 landscapes
+file_name = data_dir + 'optimization_log.csv'
 
 
 #  Hyperparameters
@@ -24,14 +24,15 @@ delta = 2.
 noise = 0.2
 
 #  Computation parameters
-N = 16  # population size,  200
-n_sim = 1    # max number
+N = 200  # population size,  200
+n_sim = 300    # max number
 ndt = 200   # 200
 ncells = 300
-ngens = 51
+ngens = 301
 
-L = 5.
+L = 5.  # increased field size
 
+#  Priors
 par_limits = {
     'x': (-L, L),
     'y': (-L, L),
@@ -118,8 +119,8 @@ for filename in filenames:
     for row in cell_data:
         row *= 1. / np.sum(row)  # rescale everything to sum up to 1
     cell_dataset.append(cell_data)
-    print(filename)
-    print(cell_data)
+    # print(filename)
+    # print(cell_data)
 
 
 # timepoint 0 = D1.5, 1 = D2, 3 = D3, 5 = D4, 7 = D5
@@ -188,12 +189,13 @@ if __name__ == '__main__':
         # Regime 4 ~ Regime 2, Regime 5 ~ Regime 1 (FGF Vs End. FGF)
         # Add a3=a1, s3=s1; a4=a0, s4=s0
         # immutable pars: x, y; immutable regimes: 1, 2 (mutable: 0, 3, 4)
-        for module in module_list:
+        for module_ind, module in enumerate(module_list):
             np.append(module.a, module.a[[1, 0]])
             np.append(module.s, module.s[[1, 0]])
-            module.set_immutable_idx([1, 2])
-            module.remove_mutable_parameter('x')
-            module.remove_mutable_parameter('y')
+            if module_ind != 3:  # for green module, keep everything mutable
+                module.set_immutable_idx([1, 2])
+                module.remove_mutable_parameter('x')
+                module.remove_mutable_parameter('y')
 
         # Set up population (init fitness = -inf)
         P = Population(N, CellDiff_Dataset_Landscape, landscape_pars_celldiff, prob_pars_celldiff,
@@ -243,7 +245,7 @@ if __name__ == '__main__':
         #  ________________________________________________________________________________________________________
 
         # Plot trajectories from several experiments
-        experiments = (0, 2)
+        experiments = (0, 1, 2)    # decide which exoeriments
         n = 50
 
         for exp in experiments:

@@ -34,13 +34,15 @@ class Module:
         # TODO: add precision (decimals)
         module_str = self.__class__.__name__ + ': '
         pars_str = []
-        for par in self.mutable_parameters_list:
+        # for par in self.mutable_parameters_list:
+        for par in ('x', 'y', 'a', 's', 'tau'):
             value = getattr(self, par)
-            if isinstance(value, np.ndarray):
-                par_str = np.array2string(value, separator=',', floatmode='maxprec_equal')
-            else:
-                par_str = str(value)
-            pars_str.append(par + '=' + par_str)
+            if value is not None:
+                if isinstance(value, np.ndarray):
+                    par_str = np.array2string(value, separator=',', floatmode='maxprec_equal')
+                else:
+                    par_str = str(value)
+                pars_str.append(par + '=' + par_str)
         module_str += '; '.join(pars_str)
         return module_str
 
