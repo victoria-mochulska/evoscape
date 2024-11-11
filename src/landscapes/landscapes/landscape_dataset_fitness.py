@@ -17,6 +17,10 @@ class CellDiff_Dataset_Landscape(Landscape):
 
         cell_data_matrices = fitness_pars['cell_data']  # 1st dimension is experimental conditions
         ncond = len(cell_data_matrices)
+        if 'weights' in fitness_pars:
+            weights = fitness_pars['weights']
+        else:
+            weights = np.ones(ncond)
         morphogen_times = fitness_pars['morphogen_times']
         assert len(morphogen_times) == ncond, "The numbers of conditions do not match"
 
@@ -36,7 +40,7 @@ class CellDiff_Dataset_Landscape(Landscape):
             cell_states = cell_states / fitness_pars['ncells']  # normalized to give probability
             self.result.append(cell_states)
 
-            fitness -= result_distance(cell_states, cell_data, None) / len(times)
+            fitness -= weights[k]*result_distance(cell_states, cell_data, None) / len(times)
 
             if fitness_pars['penalty_weight'] != 0:
                 # for timepoint in range(len(times)):

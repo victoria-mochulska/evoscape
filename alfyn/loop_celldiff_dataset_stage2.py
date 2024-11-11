@@ -14,7 +14,7 @@ from landscapes.module_helper_functions import modules_from_txt
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files_5/'    # where to save simulations including purple module
+save_dir = 'saved_files_6/'    # where to save simulations
 data_dir = 'saved_files_4/CellDiff_Dataset_Landscape/'   # to load Stage 1 landscapes
 file_name = data_dir + 'optimization_log.csv'
 
@@ -105,8 +105,9 @@ par_choice_values = {}
 # Mutable: all pars of new module (purple, AN)
 # ______________________________________________________________________
 
-#  Loading the dataset of 3 experiments
+#
 filenames = ('NoCh.txt', 'Ch2-3.txt', 'Ch2-4.txt', 'Ch2-5.txt', 'Ch2-5_FGF0-3.txt', 'Ch2-5_FGF0-5.txt')
+# plot traj: 0, 1, 3, 4, 5
 
 col_labels = ['EPI', 'Tr', 'CE', 'PN', 'M', 'AN']
 row_labels = ['Day 1.5', 'Day 2', 'Day 2.5', 'Day 3', 'Day 3.5', 'Day 4', 'Day 4.5', 'Day 5']
@@ -161,6 +162,7 @@ fitness_pars_celldiff = {
     'time_pars': time_pars,
     'morphogen_times': morphogen_times,
     'ndt': ndt,
+    'weights': (1., 1., 2., 1., 1., 1.),  # more weight for Ch2-4
 }
 
 # ________________________________________________
@@ -190,8 +192,8 @@ if __name__ == '__main__':
         # Add a3=a1, s3=s1; a4=a0, s4=s0
         # immutable pars: x, y; immutable regimes: 1, 2 (mutable: 0, 3, 4)
         for module_ind, module in enumerate(module_list):
-            np.append(module.a, module.a[[1, 0]])
-            np.append(module.s, module.s[[1, 0]])
+            module.a = np.append(module.a, module.a[[1, 0]])
+            module.s = np.append(module.s, module.s[[1, 0]])
             if module_ind != 3:  # for green module, keep everything mutable
                 module.set_immutable_idx([1, 2])
                 module.remove_mutable_parameter('x')
@@ -245,7 +247,7 @@ if __name__ == '__main__':
         #  ________________________________________________________________________________________________________
 
         # Plot trajectories from several experiments
-        experiments = (0, 1, 2)    # decide which exoeriments
+        experiments = (0, 1, 3, 4, 5)    # skipping Ch2-4 (exp 2)
         n = 50
 
         for exp in experiments:
