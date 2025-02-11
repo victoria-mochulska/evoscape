@@ -3,7 +3,8 @@ import numpy as np
 from copy import copy
 
 from cmcrameri import cm as scm
-from matplotlib.colors import ListedColormap, BoundaryNorm, CenteredNorm
+from matplotlib.colors import ListedColormap, BoundaryNorm, CenteredNorm, Normalize
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from skimage.measure import label
 
 plt.rcParams.update({'figure.dpi': 100})  # Change to 200 for high res figures
@@ -41,8 +42,8 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types'):
 
     for i, module in enumerate(landscape.module_list):
         if module.a.size == 1 and module.s.size == 1 and regime == 0:
-            sig = module.s
-            A = module.a
+            sig = float(module.s)
+            A = float(module.a)
         else:
             sig = module.s[regime]
             A = module.a[regime]
@@ -134,11 +135,22 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', traj_ti
     # plt.show()
     return fig, stream_ax
 
+
+def visualize_cell_states(landscape, xx, yy, t, abs_threshold=0.):
+    cell_states = landscape.get_cell_states(t, np.array((xx.flatten(), yy.flatten())), abs_threshold=abs_threshold)
+    cmap_state = ListedColormap(['grey', ] + list(order_colors))
+    norm_state = BoundaryNorm(np.arange(len(order_colors) + 1) - 1.5, cmap_state.N)
+    fig, ax = visualize_landscape_t(landscape, xx, yy, t=t, color_scheme='order')
+    # plt.figure()
+    plt.imshow(np.reshape(cell_states, xx.shape), cmap=cmap_state, norm=norm_state, origin='lower',
+               extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)), alpha=0.3, interpolation='nearest')
+    return fig, ax
+
 # _____________________________________________________________________________________________________________________
 
 
 def visualize_potential(landscape, xx, yy, regime, color_scheme='fp_types', elev=None, azim=None, offset=2,
-                        cmap_center=None, rot=False, scatter=False, zlim=None):
+                        cmap_center=None, rot=False, rot_contour=False, scatter=False, zlim=None):
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
     # circles = []
     fig, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(6, 6))
@@ -151,7 +163,7 @@ def visualize_potential(landscape, xx, yy, regime, color_scheme='fp_types', elev
         cmap_center = potential[0, 0]
     if rot:
         potential = rot_potential
-        cmap = 'RdBu'
+        cmap = 'RdBu_r'
     else:
         cmap = scm.cork.reversed()
 
@@ -163,14 +175,36 @@ def visualize_potential(landscape, xx, yy, regime, color_scheme='fp_types', elev
         zlow = zlim[0]
     ax.contour(xx, yy, potential, zdir='z', offset=zlow, cmap=cmap, norm=CenteredNorm(cmap_center))
     ax.plot_surface(xx, yy, potential, cmap=cmap, linewidth=0, antialiased=False, norm=CenteredNorm(cmap_center))
-    # if wind:
-    #     right = rot_potential.copy()
-    #     left = rot_potential.copy()
-    #     right[rot_potential < 0] = 0
-    #     left[rot_potential > 0] = 0
-    #     ax.contour(xx, yy, right, zdir='z', offset=np.max(potential), cmap='RdBu', norm=CenteredNorm(0), zorder=10)
-    #     ax.contour(xx, yy, np.abs(left), zdir='z', offset=np.max(potential), cmap='RdBu_r', norm=CenteredNorm(0),
-    #                zorder=10)
+    if rot_contour:
+        contour = plt.contour(xx, yy, rot_potential, levels=7, alpha=0)
+        cmap_contour = plt.get_cmap('RdBu_r')
+        norm = CenteredNorm(cmap_center)
+        for i, level_segments in enumerate(contour.allsegs):
+            level_value = contour.levels[i]
+            line_color = cmap_contour(norm(level_value))
+            for segment in level_segments:
+                if len(segment) < 2:
+                    continue  # Skip small segments
+                x_coords = segment[:, 0]
+                y_coords = segment[:, 1]
+                derivs, z_coords, rot_z = landscape(float(regime), (x_coords, y_coords), return_potentials=True)
+                ax.plot(x_coords, y_coords, z_coords, color=line_color, linestyle='-', linewidth=2, zorder=100)
+
+                arrow_size = 0.3
+
+                if len(segment) > 80:
+                    mid = len(x_coords) // 2
+                    base = np.array([x_coords[mid], y_coords[mid], z_coords[mid]])
+                    direction = np.array([x_coords[mid] - x_coords[mid-1], y_coords[mid] - y_coords[mid-1],
+                                          z_coords[mid] - z_coords[mid-1]])
+                    direction /= np.linalg.norm(direction)
+                    if contour.levels[i] > 0:
+                        direction = -direction
+                    perp_vector = np.cross(direction, np.array([0, 0, 1]))
+                    perp_vector /= np.linalg.norm(perp_vector)  # Normalize
+                    left = base + arrow_size * (perp_vector * 0.4 - direction)
+                    right = base + arrow_size * (-perp_vector * 0.4 - direction)
+                    ax.plot(*zip(left, base, right), color=line_color, linewidth=1.5, zorder=100)
 
     if scatter:
         for i, module in enumerate(landscape.module_list):
@@ -275,7 +309,7 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
             # print('Min velocity:', round(np.min(velocities), 3), ', Max:', round(np.max(velocities), 3),
             #       ', Mean:', round(np.mean(velocities), 3), ', Median:', round(np.median(velocities), 3))
 
-            stream_ax.imshow(velocities, alpha=0.3, cmap='Greys', origin='lower',
+            stream_ax.imshow(velocities, alpha=0.5, cmap='Greys', origin='lower',
                              extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
 
             # An attempt to plot fixed points - often ends up missing some points

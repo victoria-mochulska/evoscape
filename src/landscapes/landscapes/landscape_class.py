@@ -98,8 +98,14 @@ class Landscape:
             dx[i, :], dy[i, :] = self.fixed_point(module, xr, yr)
         derivs = self.A0 * np.array((-x ** 3, -y ** 3)) + (np.sum(w * dx, axis=0), np.sum(w * dy, axis=0))
         if return_potentials:
-            potential = np.sum(w * (~curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0) + self.A0 / 4 * (x ** 4 + y ** 4)
-            rot_potential = np.sum(w * (curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0)
+            broadcast_shape = (len(self.module_list),) + (1,) * len(x.shape)
+            coefs = (~curl * sign * sig ** 2).reshape(broadcast_shape)
+            potential = np.sum(w * coefs, axis=0) + self.A0 / 4 * (x ** 4 + y ** 4)
+            coefs_rot = (curl * sign * sig ** 2).reshape(broadcast_shape)
+            rot_potential = np.sum(w * coefs_rot, axis=0)
+            # potential = np.sum(w * (~curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0) + self.A0 / 4 * (x ** 4 + y ** 4)
+            # rot_potential = np.sum(w * (curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0)
+
             return derivs, potential, rot_potential
         return derivs
 
