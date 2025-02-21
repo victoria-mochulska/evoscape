@@ -1,6 +1,6 @@
 local_tests
-/src/landscapes/saved_files/
-/src/landscapes/old_landscape_types/
+/src/evoscape/saved_files/
+/src/evoscape/old_landscape_types/
 /alfyn/
 /saved_files/
 /examples/saved_files/
@@ -9,3 +9,4 @@ local_tests
 /alfyn_results_new/
 /alfyn_results_wide_prior/
 /alfyn_results_stage2/
+/misc/

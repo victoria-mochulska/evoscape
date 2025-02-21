@@ -14,7 +14,7 @@ from landscapes.module_helper_functions import modules_from_txt
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files_6/'    # where to save simulations
+save_dir = 'saved_files_8/'    # where to save simulations
 data_dir = 'saved_files_4/CellDiff_Dataset_Landscape/'   # to load Stage 1 landscapes
 file_name = data_dir + 'optimization_log.csv'
 
@@ -106,7 +106,8 @@ par_choice_values = {}
 # ______________________________________________________________________
 
 #
-filenames = ('NoCh.txt', 'Ch2-3.txt', 'Ch2-4.txt', 'Ch2-5.txt', 'Ch2-5_FGF0-3.txt', 'Ch2-5_FGF0-5.txt')
+filenames = ('NoCh.txt', 'Ch2-3.txt', 'Ch2-4.txt', 'Ch2-5.txt',
+             'Ch2-5_FGF0-3.txt', 'Ch2-5_FGF0-4.txt', 'Ch2-5_FGF0-5.txt')
 # plot traj: 0, 1, 3, 4, 5
 
 col_labels = ['EPI', 'Tr', 'CE', 'PN', 'M', 'AN']
@@ -130,6 +131,7 @@ morphogen_times = ((delta*3, delta*3, delta*3, delta*7),  # No Chir  (D3, D3, D3
                    (delta*1, delta*3, delta*3, delta*5),  # Chir 2-4  (D2, D3, D3, D4)
                    (delta*1, delta*3, delta*3, delta*7),  # Chir 2-5    (D2, D3, D3, -)
                    (delta*1, delta*3, delta*7, delta*7),    # Ch 2-5 FGF 0-3  (D2, D3, -, -)
+                   (delta*1, delta*5, delta*7, delta*7),    # Ch 2-5 FGF 0-4  (D2, D4, -, -)
                    (delta*1, delta*7, delta*7, delta*7),    # Ch 2-5 FGF 0-5    (D2, -, -, -)
                    )
 time_pars = (0., delta * 7, 8)
@@ -162,7 +164,7 @@ fitness_pars_celldiff = {
     'time_pars': time_pars,
     'morphogen_times': morphogen_times,
     'ndt': ndt,
-    'weights': (1., 1., 2., 1., 1., 1.),  # more weight for Ch2-4
+    'weights': (1., 1., 2., 1., 1., 1., 1.),  # more weight for Ch2-4
 }
 
 # ________________________________________________
@@ -192,8 +194,12 @@ if __name__ == '__main__':
         # Add a3=a1, s3=s1; a4=a0, s4=s0
         # immutable pars: x, y; immutable regimes: 1, 2 (mutable: 0, 3, 4)
         for module_ind, module in enumerate(module_list):
+            # initial condition for endogenous FGF based on FGF
             module.a = np.append(module.a, module.a[[1, 0]])
             module.s = np.append(module.s, module.s[[1, 0]])
+            # random initial condition for the new regimes
+            # module.a = np.append(module.a, np.random.uniform(*par_limits['a'], 2))
+            # module.s = np.append(module.s, np.random.uniform(*par_limits['s'], 2))
             if module_ind != 3:  # for green module, keep everything mutable
                 module.set_immutable_idx([1, 2])
                 module.remove_mutable_parameter('x')
@@ -227,7 +233,7 @@ if __name__ == '__main__':
         #  Plot result Vs target proportions
         for k in range(len(cell_dataset)):
             fig = plot_compare_cell_proportions(cell_dataset[k], landscape.result[k], col_labels, col_colors,
-                                                row_labels=None)
+                                                row_labels=row_labels)
             fig.show()
             fig.savefig(results_dir + '/result_proportions_' + str(k) + '.png', bbox_inches='tight')
             plt.close(fig)
@@ -247,7 +253,7 @@ if __name__ == '__main__':
         #  ________________________________________________________________________________________________________
 
         # Plot trajectories from several experiments
-        experiments = (0, 1, 3, 4, 5)    # skipping Ch2-4 (exp 2)
+        experiments = (0, 1, 2, 3, 4, 5, 6)    # all experiments
         n = 50
 
         for exp in experiments:
