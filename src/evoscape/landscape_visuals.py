@@ -24,10 +24,8 @@ order_colors = (
     'gold',
     'tab:green',
     'tab:blue',
-    # 'grey',
     'tab:purple',
     'm',
-    # 'grey'
 )
 
 
@@ -215,8 +213,8 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
                         direction = np.array([x_coords[mid] - x_coords[mid-1], y_coords[mid] - y_coords[mid-1],
                                               z_coords[mid] - z_coords[mid-1]])
                         direction /= np.linalg.norm(direction)
-                        if contour.levels[i] < 0:
-                            direction = -direction
+                        # if level_value < 0:
+                        #     direction = -direction
                         perp_vector = np.cross(direction, np.array([0, 0, 1]))
                         perp_vector /= np.linalg.norm(perp_vector)  # Normalize
                         left = base + arrow_size * (perp_vector * 0.4 - direction)
@@ -418,6 +416,32 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, frozen=False, t_f
     ax[1].set_yticks([])
     return fig
 
+
+def circle_plot(landscape, regime=None, L=6, color_scheme='order', lw=4):
+    fig = plt.figure(figsize=(7, 7))
+    ax = plt.gca()
+    if regime is not None:
+        regimes = (regime,)
+    else:
+        regimes = range(len(landscape.module_list[0].a))
+    for i in range(len(landscape.module_list)):
+        m = landscape.module_list[i]
+        if color_scheme == 'fp_types':
+            color = fp_type_colors[m.__class__.__name__]
+        elif color_scheme == 'order':
+            color = order_colors[i]
+        else:
+            color = 'grey'
+        for j in regimes:
+            circle = plt.Circle((m.x, m.y), 1.18 * m.s[j], color=color, fill=False,
+                                alpha=0.25 * np.sqrt(m.a[j]), clip_on=False, linewidth=lw,
+                                linestyle='solid', zorder=i * 10)
+            ax.add_patch(circle)
+    ax.set_xlim((-L, L))
+    ax.set_ylim((-L, L))
+    ax.axis('off')
+    ax.set_aspect('equal')
+    return fig
 
 # old function - plotting trajectories with colored segments
 #         def plot_trajectories(self, n, times, L, noise, init_cond=None, ndt=10, color_scheme='state', slow=None):

@@ -7,7 +7,7 @@ from evoscape.modules.module_class import Node
 
 
 class Landscape:
-    def __init__(self, module_list=(), A0=0., init_cond=(0., 1.), regime=mr_sigmoid, n_regimes=2,
+    def __init__(self, module_list=(), A0=0., x0=(0., 0.), init_cond=(0., 1.), regime=mr_sigmoid, n_regimes=2,
                  morphogen_times=(0.,), used_fp_types=(Node,), immutable_pars_list=()):
         """
         :param module_list: list of module objects
@@ -27,6 +27,7 @@ class Landscape:
                 if par_name in self.module_list[ind].mutable_parameters_list:
                     self.module_list[ind].remove_mutable_parameter(par_name)
         self.A0 = A0
+        self.x0 = x0
         self.regime = regime
         self.n_regimes = n_regimes
         self.morphogen_times = morphogen_times
@@ -96,11 +97,11 @@ class Landscape:
             r = np.sqrt(xr ** 2 + yr ** 2)
             w[i, :] = A * self.local_weight(r, sig[i])
             dx[i, :], dy[i, :] = self.fixed_point(module, xr, yr)
-        derivs = self.A0 * np.array((-x ** 3, -y ** 3)) + (np.sum(w * dx, axis=0), np.sum(w * dy, axis=0))
+        derivs = self.A0 * np.array((-(x-self.x0[0]) ** 3, -(y-self.x0[1]) ** 3)) + (np.sum(w * dx, axis=0), np.sum(w * dy, axis=0))
         if return_potentials:
             broadcast_shape = (len(self.module_list),) + (1,) * len(x.shape)
             coefs = (~curl * sign * sig ** 2).reshape(broadcast_shape)
-            potential = np.sum(w * coefs, axis=0) + self.A0 / 4 * (x ** 4 + y ** 4)
+            potential = np.sum(w * coefs, axis=0) + self.A0 / 4 * ((x-self.x0[0])**4 + (y - self.x0[1])**4)
             coefs_rot = (curl * sign * sig ** 2).reshape(broadcast_shape)
             rot_potential = np.sum(w * coefs_rot, axis=0)
             # potential = np.sum(w * (~curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0) + self.A0 / 4 * (x ** 4 + y ** 4)
@@ -244,7 +245,7 @@ class Landscape:
 
         return states
 
-    def get_cell_states(self, t, coordinate=None, measure='gaussian', prob_threshold=0., abs_threshold=0.):
+    def get_cell_states(self, t, coordinate=None, measure='gaussian', prob_threshold=0., abs_threshold=0.1):
         """
         Return cell states given cell coordinates. Assignent based on a chosen distance measure, can depend on time or signals.
         :param t: float, timepoint
@@ -289,6 +290,7 @@ class Landscape:
         :param ndt: int, number of integration steps per timepoint
         :param frozen: bool, whether to fix the landscape paremeters
         :param t_freeze: if frozen, provide the time at which to calculate the landscape, to be kept constant
+        :param cell_state_thresh: threshold to use for cell state assignment with GMM
         :return: traj (array of shape (2, n, nt)) and states (int array of shape (2, nt))
         """
         traj = np.empty((*self.cell_coordinates.shape, nt), dtype='float')
