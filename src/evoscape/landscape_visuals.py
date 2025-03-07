@@ -4,8 +4,7 @@ from copy import copy
 
 from cmcrameri import cm as scm
 from matplotlib.colors import ListedColormap, BoundaryNorm, CenteredNorm, Normalize
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from skimage.measure import label
+
 
 plt.rcParams.update({'figure.dpi': 100})  # Change to 200 for high res figures
 
@@ -251,7 +250,6 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
     return fig
 
 
-# TODO: main visualizing function with 4 panels
 def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types',
                   plot_velocities=True, plot_nullclines=True,
                   plot_traj=True, traj_times=(0., 100., 150), traj_start=50, traj_init_cond=(0., 1.), traj_noise=0., ):

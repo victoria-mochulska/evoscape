@@ -7,8 +7,8 @@ from evoscape.modules.module_class import Node
 
 
 class Landscape:
-    def __init__(self, module_list=(), A0=0., x0=(0., 0.), init_cond=(0., 1.), regime=mr_sigmoid, n_regimes=2,
-                 morphogen_times=(0.,), used_fp_types=(Node,), immutable_pars_list=()):
+    def __init__(self, module_list=(), A0=0., init_cond=(0., 1.), regime=mr_sigmoid, n_regimes=2,
+                 morphogen_times=(0.,), used_fp_types=(Node,), immutable_pars_list=(), x0=(0., 0.)):
         """
         :param module_list: list of module objects
         :param A0: float - strength of global attraction (boundary condition of the potential)
@@ -290,7 +290,6 @@ class Landscape:
         :param ndt: int, number of integration steps per timepoint
         :param frozen: bool, whether to fix the landscape paremeters
         :param t_freeze: if frozen, provide the time at which to calculate the landscape, to be kept constant
-        :param cell_state_thresh: threshold to use for cell state assignment with GMM
         :return: traj (array of shape (2, n, nt)) and states (int array of shape (2, nt))
         """
         traj = np.empty((*self.cell_coordinates.shape, nt), dtype='float')

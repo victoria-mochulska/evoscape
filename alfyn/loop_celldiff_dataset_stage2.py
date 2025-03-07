@@ -3,19 +3,20 @@ import os
 import warnings
 import pandas as pd
 
-from landscapes.population_class import Population
-from landscapes.landscapes.landscape_dataset_fitness import CellDiff_Dataset_Landscape
-from landscapes.modules.module_class import Node
-from landscapes.morphogen_regimes import *
-from landscapes.landscape_visuals import *
-from landscapes.helper_functions import plot_compare_cell_proportions, get_cell_data
-from landscapes.module_helper_functions import modules_from_txt
+from evoscape.population_class import Population
+from evoscape.landscapes.landscape_dataset_fitness import CellDiff_Dataset_Landscape
+from evoscape.modules.module_class import Node
+from evoscape.morphogen_regimes import mr_piecewise
+from evoscape.landscape_visuals import *
+from evoscape.helper_functions import plot_compare_cell_proportions, get_cell_data
+from evoscape.module_helper_functions import modules_from_txt
 
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files_8/'    # where to save simulations
+save_dir = 'saved_files_9/'    # where to save simulations
 data_dir = 'saved_files_4/CellDiff_Dataset_Landscape/'   # to load Stage 1 landscapes
+
 file_name = data_dir + 'optimization_log.csv'
 
 
@@ -24,13 +25,13 @@ delta = 2.
 noise = 0.2
 
 #  Computation parameters
-N = 200  # population size,  200
+N = 200  # population size
 n_sim = 300    # max number
-ndt = 200   # 200
-ncells = 300
+ndt = 200   # integration steps per traj. timestep
+ncells = 500   # was 300
 ngens = 301
 
-L = 5.  # increased field size
+L = 5.  # field size
 
 #  Priors
 par_limits = {
@@ -157,10 +158,10 @@ fitness_pars_celldiff = {
     'ncells': ncells,  #
     'cell_data': cell_dataset,  # full dataset
     'init_state': 0,
-    'attractor_states': (),
+    'attractor_states': (3, 4),
     'non_attractor_states': (),
     'noise': noise,
-    'penalty_weight': 0.,
+    'penalty_weight': 0.1,
     'time_pars': time_pars,
     'morphogen_times': morphogen_times,
     'ndt': ndt,
@@ -176,8 +177,6 @@ gen = 300
 init_timecodes = list(log['Timecode'][log['Fitness'] > fitness_threshold])
 n_sim = np.min((n_sim, len(init_timecodes)))
 
-
-# In[]:
 
 if __name__ == '__main__':
     print('N = ', N)
@@ -227,6 +226,9 @@ if __name__ == '__main__':
         plt.gca().set_ylim(top=0)
         fig.savefig(results_dir + '/result_fitness_traj.png', bbox_inches='tight')
         plt.close(fig)
+
+        with open(results_dir + '/result_fitness_traj.npy', 'wb') as f:
+            np.save(f, fitness_traj)
 
         landscape = P.landscape_list[0]
 

@@ -13,7 +13,7 @@ class CellDiff_Dataset_Landscape(Landscape):
 
     def get_fitness(self, fitness_pars):
         time_pars = fitness_pars['time_pars']
-        times = np.linspace(time_pars[0], time_pars[1], time_pars[2])
+        times = np.linspace(*time_pars)
 
         cell_data_matrices = fitness_pars['cell_data']  # 1st dimension is experimental conditions
         ncond = len(cell_data_matrices)
@@ -50,8 +50,7 @@ class CellDiff_Dataset_Landscape(Landscape):
                         if cell_data[timepoint, state] != 0:
                             # attractor: a deterministic trajectory starting from a state has to end up in the same state
                             self.init_cells(1, state, noise=0.)
-                            traj, states = self.run_cells(0., 10, 11, 0., ndt=50, frozen=True,
-                                                          t_freeze=times[timepoint])
+                            traj, states = self.run_cells(0., 10, 11, 0., ndt=50, frozen=True, t_freeze=times[timepoint])
                             penalty += float(states[0, -1] != states[0, 0])
 
                     for state in fitness_pars['non_attractor_states']:
