@@ -1,6 +1,6 @@
 [tool.poetry]
-name = "landscapes"
-version = "0.1.0"
+name = "evoscape"
+version = "0.1.0.dev0"
 description = ""
 authors = ["victoria-mochulska <viktoriia.mochulska@mail.mcgill.ca>"]
 readme = "README.md"
@@ -12,10 +12,12 @@ matplotlib = "^3.9.0"
 scikit-image = "^0.23.2"
 cmcrameri = "^1.9"
 pyyaml = "^6.0.1"
-
+seaborn = "^0.13.2"
+imageio = "^2.37.0"
+jupyter = "^1.1.1"
 
 [tool.poetry.group.dev.dependencies]
-jupyter = "^1.0.0"
+
 
 [build-system]
 requires = ["poetry-core"]

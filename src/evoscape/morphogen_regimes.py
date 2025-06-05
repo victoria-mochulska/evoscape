@@ -31,3 +31,19 @@ def mr_piecewise(t, a, s, t0, t1=None, t2=None, t3=None, **kwargs):
     else:
         raise NotImplementedError
     return s_t, a_t
+
+def mr_current_regime(t, t0, t1=None, t2=None, t3=None):
+    """Return an index indicating the current time:
+    0: t < t0, 1: t0 ≤ t < t1, ..., n: t ≥ last threshold
+    """
+    thresholds = [th for th in [t0, t1, t2, t3] if th is not None]
+    conds = [t < thresholds[0]] if thresholds else [np.ones_like(t, dtype=bool)]
+
+    for i in range(len(thresholds) - 1):
+        conds.append((t >= thresholds[i]) & (t < thresholds[i + 1]))
+
+    if thresholds:
+        conds.append(t >= thresholds[-1])
+
+    return np.select(conds, list(range(len(conds))))
+

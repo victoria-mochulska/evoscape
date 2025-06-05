@@ -245,7 +245,7 @@ class Landscape:
 
         return states
 
-    def get_cell_states(self, t, coordinate=None, measure='gaussian', prob_threshold=0., abs_threshold=0.1):
+    def get_cell_states(self, t, coordinate=None, measure='gaussian', prob_threshold=0., abs_threshold=0.):
         """
         Return cell states given cell coordinates. Assignent based on a chosen distance measure, can depend on time or signals.
         :param t: float, timepoint

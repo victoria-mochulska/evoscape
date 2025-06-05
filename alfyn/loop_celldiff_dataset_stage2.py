@@ -14,7 +14,7 @@ from evoscape.module_helper_functions import modules_from_txt
 warnings.simplefilter('ignore')
 
 # _____________________________________________________________________________
-save_dir = 'saved_files_9/'    # where to save simulations
+save_dir = 'saved_files_10/'    # where to save simulations
 data_dir = 'saved_files_4/CellDiff_Dataset_Landscape/'   # to load Stage 1 landscapes
 
 file_name = data_dir + 'optimization_log.csv'
@@ -79,16 +79,16 @@ par_choice_values = {}
 # Training for regimes 1, 4, 5
 
 # No Chir:
-# regime 1 until day 3, regime 4 day 3-5
-# t0 = t1 = t2 = day 3; t3 = never
-# (D3, D3, D3, 100.)
+# regime 1 until day 3, regime 5 day 3-5
+# t0 = t1 = t2 = t3 = day 3
+# (D3, D3, D3, D3)
 
 # Chir 2-3:
 # regime 1 until day 2, regime 2 day 2-3, regime 5 day 3-5
 # t0 = day 2, t1=t2=t3 day 3
 # (D2, D3, D3, D3)
 
-# Chir 2-4:   ?
+# Chir 2-4:
 # regime 1 until day 2, regime 2 day 2-3, regime 4 day 3-4, regime 5 day 4-5
 # t0 = day 2, t1=t2 = day 3, t3 = day 4
 # (D2, D3, D3, D4)
@@ -127,13 +127,13 @@ for filename in filenames:
 
 
 # timepoint 0 = D1.5, 1 = D2, 3 = D3, 5 = D4, 7 = D5
-morphogen_times = ((delta*3, delta*3, delta*3, delta*7),  # No Chir  (D3, D3, D3, -)
+morphogen_times = ((delta*3, delta*3, delta*3, delta*3),  # No Chir  (D3, D3, D3, D3)
                    (delta*1, delta*3, delta*3, delta*3),   # Chir 2-3  (D2, D3, D3, D3)
                    (delta*1, delta*3, delta*3, delta*5),  # Chir 2-4  (D2, D3, D3, D4)
-                   (delta*1, delta*3, delta*3, delta*7),  # Chir 2-5    (D2, D3, D3, -)
-                   (delta*1, delta*3, delta*7, delta*7),    # Ch 2-5 FGF 0-3  (D2, D3, -, -)
-                   (delta*1, delta*5, delta*7, delta*7),    # Ch 2-5 FGF 0-4  (D2, D4, -, -)
-                   (delta*1, delta*7, delta*7, delta*7),    # Ch 2-5 FGF 0-5    (D2, -, -, -)
+                   (delta*1, delta*3, delta*3, delta*100),  # Chir 2-5    (D2, D3, D3, -)
+                   (delta*1, delta*3, delta*100, delta*100),    # Ch 2-5 FGF 0-3  (D2, D3, -, -)
+                   (delta*1, delta*5, delta*100, delta*100),    # Ch 2-5 FGF 0-4  (D2, D4, -, -)
+                   (delta*1, delta*100, delta*100, delta*100),    # Ch 2-5 FGF 0-5    (D2, -, -, -)
                    )
 time_pars = (0., delta * 7, 8)
 
@@ -158,10 +158,10 @@ fitness_pars_celldiff = {
     'ncells': ncells,  #
     'cell_data': cell_dataset,  # full dataset
     'init_state': 0,
-    'attractor_states': (3, 4),
+    'attractor_states': (),
     'non_attractor_states': (),
     'noise': noise,
-    'penalty_weight': 0.1,
+    'penalty_weight': 0.,
     'time_pars': time_pars,
     'morphogen_times': morphogen_times,
     'ndt': ndt,
@@ -172,10 +172,12 @@ fitness_pars_celldiff = {
 
 # load list of timecodes of Stage 1 optimization
 log = pd.read_csv(file_name, sep='\t', names=['Timecode', 'Init timecode', 'Fitness'], skiprows=1)
-fitness_threshold = -0.2
-gen = 300
-init_timecodes = list(log['Timecode'][log['Fitness'] > fitness_threshold])
+# fitness_threshold = -0.2
+n_landscapes = 240
+fitness_threshold = np.partition(log['Fitness'], -n_landscapes)[-n_landscapes]
+init_timecodes = list(log['Timecode'][log['Fitness'] >= fitness_threshold])
 n_sim = np.min((n_sim, len(init_timecodes)))
+gen = 300
 
 
 if __name__ == '__main__':
