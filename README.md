@@ -11,7 +11,7 @@ A simulation framework for constructing and optimizing epigenetic landscape mode
 
 ## 🌀 Landscape construction
 <p align="center">
-  <img src="figures/Figure1_intro.png" alt="Project Logo" width="1000"/>
+  <img src="figures/Figure1_intro.png" alt="Project Logo" width="700"/>
 </p>
 
 
