@@ -34,6 +34,8 @@ order_colors = (
 cmap_state = ListedColormap(order_colors)
 norm_state = BoundaryNorm(np.arange(len(order_colors) + 1) - 0.5, cmap_state.N)
 cmap_time = 'viridis'
+# cmap_cells = scm.batlow
+cmap_cells = scm.lipari
 
 
 def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types'):
@@ -91,7 +93,8 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types'):
 
 
 def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles=True, nullclines=True, density=0.5,
-                          traj_times=None, traj_init_cond=(0., 0.), traj_start=0, traj_color='forestgreen', circle_opacity=0.25):
+                          traj_times=None, traj_init_cond=(0., 0.), traj_start=0, traj_color='forestgreen', circle_opacity=0.25,
+                          start_points=None, traj_arrow=True):
     """ Visualize the flow and modules at time t, with optional integrated trajectory in the frozen landscape. """
 
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
@@ -124,7 +127,7 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
             circles_ax.set_ylim((np.min(yy), np.max(yy)))
 
     stream_ax.streamplot(xx, yy, dX, dY, density=density, arrowsize=2., arrowstyle='->', linewidth=1,
-                         color='grey')
+                         color='grey', start_points=start_points)
     if nullclines:
         stream_ax.contour(xx, yy, dX, (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
         stream_ax.contour(xx, yy, dY, (0,), colors=('k',), linestyles='--', linewidths=1.5, alpha=0.7)
@@ -135,27 +138,25 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
                                            t_freeze=t)
         stream_ax.plot(traj[0, 0, traj_start:], traj[1, 0, traj_start:], lw=3, color=traj_color)
 
-        mid = traj_times[2] // 3 * 2
-        x_coords = traj[0, 0, :]
-        y_coords = traj[1, 0, :]
-        arrow_size=0.3
-        base = np.array([x_coords[mid], y_coords[mid]])
-        direction = np.array([x_coords[mid] - x_coords[mid - 1], y_coords[mid] - y_coords[mid - 1], 0.])
-        direction /= np.linalg.norm(direction)
-        perp_vector = np.cross(direction, np.array([0, 0, 1]))[0:2]
-        perp_vector /= np.linalg.norm(perp_vector)  # Normalize
-        direction = direction[0:2]
-        left = base + arrow_size * (perp_vector * 0.4 - direction)
-        right = base + arrow_size * (-perp_vector * 0.4 - direction)
-        stream_ax.plot(*zip(left, base, right), color=traj_color, linewidth=3, zorder=100)
+        if traj_arrow:
+            mid = traj_times[2] // 3 * 2
+            x_coords = traj[0, 0, :]
+            y_coords = traj[1, 0, :]
+            arrow_size=0.3
+            base = np.array([x_coords[mid], y_coords[mid]])
+            direction = np.array([x_coords[mid] - x_coords[mid - 1], y_coords[mid] - y_coords[mid - 1], 0.])
+            direction /= np.linalg.norm(direction)
+            perp_vector = np.cross(direction, np.array([0, 0, 1]))[0:2]
+            perp_vector /= np.linalg.norm(perp_vector)  # Normalize
+            direction = direction[0:2]
+            left = base + arrow_size * (perp_vector * 0.4 - direction)
+            right = base + arrow_size * (-perp_vector * 0.4 - direction)
+            stream_ax.plot(*zip(left, base, right), color=traj_color, linewidth=3, zorder=100)
 
-
-    stream_ax.set_xlim([np.min(xx), np.max(xx)])
-    stream_ax.set_ylim([np.min(yy), np.max(yy)])
+    stream_ax.set_xlim(np.min(xx), np.max(xx))
+    stream_ax.set_ylim(np.min(yy), np.max(yy))
     stream_ax.set_xticks([])
     stream_ax.set_yticks([])
-    # landscape.morphogen_times = morphogen_times
-    # plt.show()
     return fig, stream_ax
 
 
@@ -498,6 +499,41 @@ def make_movie_discrete(landscape, xx, yy, labels, time_pars, n_cells, noise, in
     imageio.mimsave(save_dir+filename, frames, fps=fps)
     del frames
     print(f"Movie saved to {save_dir+filename}")
+
+
+def make_movie(landscape, xx, yy, time_pars, n_cells, noise, init_cond=0,
+               circles=True, circle_opacity=0.1, density=0.65, nullclines=False,
+               traj_times=None, traj_init_cond=None, traj_start=50,
+               fps=10, save_dir='', filename='movie.gif'):
+    """
+    Generate a trajectory movie with a continuously changing background
+    """
+    n_frames = time_pars[2]
+    # Starting points for streamlines
+    all_points = np.column_stack([xx.ravel(), yy.ravel()])
+    K = 25  # number of streamlines
+    indices = np.random.choice(len(all_points), K, replace=False)
+    start_points = all_points[indices]
+
+    landscape.init_cells(n_cells, init_cond, noise)
+    times = np.linspace(*time_pars)
+    traj, states = landscape.run_cells(*time_pars, noise, ndt=10, frozen=False)
+    for i in range(n_frames):
+        fig, ax = visualize_landscape_t(landscape, xx, yy, times[i], color_scheme='fp_types', circles=circles,
+                                        nullclines=nullclines, circle_opacity=circle_opacity, density=density,
+                                        start_points=start_points, traj_times=traj_times,
+                                        traj_init_cond=traj_init_cond, traj_start=traj_start, traj_arrow=False)
+        sc = ax.scatter(traj[0, :, i], traj[1, :, i], s=50, alpha=1., c=np.arange(n_cells), cmap=cmap_cells, zorder=10)
+        fig.savefig(save_dir+f"frame_{i:03d}.png", dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+    frames = [imageio.imread(save_dir+f"frame_{i:03d}.png") for i in range(n_frames)]
+    imageio.mimsave(save_dir+filename, frames, fps=fps)
+    del frames
+    print(f"Movie saved to {save_dir+filename}")
+
+
+
 
 # old function - plotting trajectories with colored segments
 #         def plot_trajectories(self, n, times, L, noise, init_cond=None, ndt=10, color_scheme='state', slow=None):
