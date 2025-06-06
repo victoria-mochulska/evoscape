@@ -90,7 +90,9 @@ def transform_coords(module_list, old_coords, origin=0, direction=2, left=None, 
     module_coords = module_coords - module_coords[origin]
 
     # x, y = np.mean(module_coords[direction, 0]), np.mean(module_coords[direction, 1])
-    norm_coords = (module_coords.T / np.linalg.norm(module_coords, axis=1).T).T
+    norms = np.linalg.norm(module_coords, axis=1)
+    norms[norms==0] = 1.
+    norm_coords = (module_coords.T / norms.T).T
     x, y = np.sum(norm_coords[direction, 0]), np.sum(norm_coords[direction, 1])
 
     d = np.linalg.norm((x, y))
@@ -122,7 +124,6 @@ def rotate_landscape(landscape, origin=0, direction=2, left=None, right=None, bo
     left: module index, mirror flip to have x<0
     right: module index, mirror flip to have x>0
     bottom: module index, mirror flip to have y<0
-    scale: bool, scale the coordinates to a range of [-1, 1] if True
     '''
     module_coords = np.zeros((len(landscape.module_list), 2))
     for i, module in enumerate(landscape.module_list):
@@ -130,7 +131,9 @@ def rotate_landscape(landscape, origin=0, direction=2, left=None, right=None, bo
     x0 = np.zeros((1, 2))
     x0 -= module_coords[origin]
     module_coords = module_coords - module_coords[origin]
-    norm_coords = (module_coords.T / np.linalg.norm(module_coords, axis=1).T).T
+    norms = np.linalg.norm(module_coords, axis=1)
+    norms[norms==0] = 1.
+    norm_coords = (module_coords.T / norms.T).T
     x, y = np.sum(norm_coords[direction, 0]), np.sum(norm_coords[direction, 1])
 
     d = np.linalg.norm((x, y))

@@ -16,6 +16,7 @@ def mr_sigmoid(t, a, s, t0, tau, **kwargs):
 
 
 def mr_piecewise(t, a, s, t0, t1=None, t2=None, t3=None, **kwargs):
+    t = float(t)
     if a.size == 2:
         a_t = np.piecewise(t, [t < t0, t >= t0], list(a))
         s_t = np.piecewise(t, [t < t0, t >= t0], list(s))
