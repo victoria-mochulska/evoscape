@@ -18,6 +18,7 @@ A simulation framework for constructing and optimizing epigenetic landscape mode
 ## 📁 Structure 
 
 <pre>
+
 evoscape/
 ├── modules/
 │   └── module_class.py                 # Module definitions
@@ -30,6 +31,12 @@ evoscape/
 ├── helper_functions.py
 ├── module_helper_functions.py
 └── landscape_visuals.py
+
+- scripts/: Codes for parallelized optimization, multiple runs
+- notebooks/: Jupyter notebooks for exploration, analysis and figures
 </pre>
 
 
+## 🚧 In development 
+* Tutorials
+* Interactive simulation
