@@ -7,12 +7,17 @@ class Somitogenesis_Landscape(Landscape):
     # fitness_pars: time_pars, init_state, ncells, t0_shift, noise, high_value, low_value, t_stable, penalty_weight
 
     def get_kymo(self, ncells, time_pars, init_state, t0_shift=1., noise=0., ndt=100):
-        kymo = np.zeros((ncells, time_pars[2]))
-        for cell_ind in range(ncells):
-            self.morphogen_times = (t0_shift * cell_ind,)
-            self.init_cells(1, init_state, noise=noise)
-            traj, states = self.run_cells(*time_pars, noise, ndt=ndt)
-            kymo[cell_ind] = traj[0, 0, :]  # x-coordinate of the first (and only) cell in time
+        # kymo = np.zeros((ncells, time_pars[2]))
+        self.morphogen_times = (t0_shift * np.arange(ncells), )
+        self.init_cells(ncells, init_state, noise=noise)
+        traj, states = self.run_cells(*time_pars, noise, ndt=ndt)
+        kymo = traj[:, 0, :]  # x-coordinates of all cells
+
+        # for cell_ind in range(ncells):
+        #     self.morphogen_times = (t0_shift * cell_ind,)
+        #     self.init_cells(1, init_state, noise=noise)
+        #     traj, states = self.run_cells(*time_pars, noise, ndt=ndt)
+        #     kymo[cell_ind] = traj[0, 0, :]  # x-coordinate of the first (and only) cell in time
         self.morphogen_times = (0.,)
         self.result = kymo
         return kymo

@@ -7,9 +7,11 @@ def mr_const(t, a, s, **kwargs):
 
 
 def mr_sigmoid(t, a, s, t0, tau, **kwargs):
+    t = np.asarray(t)
     if a.size == 2:
-        a_t = a[0] + (a[1] - a[0]) / 2. * (1 + np.tanh((t - t0) / 2. / tau))
-        s_t = s[0] + (s[1] - s[0]) / 2. * (1 + np.tanh((t - t0) / 2. / tau))
+        tanh = np.tanh((t[..., None] - t0) / 2. / tau)
+        a_t = a[0] + (a[1] - a[0]) / 2. * (1 + tanh)
+        s_t = s[0] + (s[1] - s[0]) / 2. * (1 + tanh)
     else:
         raise NotImplementedError
     return s_t, a_t
