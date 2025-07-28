@@ -16,10 +16,11 @@ def smooth_distribution(prob, eps=0.001):
     return prob + smoothing
 
 
-def kl_distance(result, target, weights):
+def kl_distance(result, target, weights=None):
     result_smoothed = smooth_distribution(result)
-    # target_smoothed = smooth_distribution(target)
-    kl = np.sum(np.where(target != 0., target * np.log(target / result_smoothed), 0.))
+    # kl = np.sum(np.where(target != 0., target * np.log(target / result_smoothed), 0.))
+    mask = target != 0
+    kl = np.sum(target[mask] * np.log(target[mask] / result_smoothed[mask]))
     return kl
 
 

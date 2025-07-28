@@ -416,9 +416,12 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, s=6, frozen=False
     sc0 = ax0.scatter(2*L*np.ones(nt), 2*L*np.ones(nt), c=np.linspace(t0, tf, nt), cmap=cmap_time, alpha=0.7, s=0.01, edgecolors='none')
     tbar = fig.colorbar(sc0, cax=ax_cbar, orientation='horizontal', label='Time')
     if t_ticks is not None:
-        tbar.set_ticks(np.linspace(*t_ticks))
+        if isinstance(t_ticks, int):
+            tbar.set_ticks(np.linspace(t0, tf, t_ticks))
+        else:
+            tbar.set_ticks(np.linspace(*t_ticks))
     else:
-        tbar.set_ticks(np.linspace(t0, tf, nt))
+        tbar.set_ticks(np.linspace(t0, tf, 7))
     tbar.ax.tick_params(which='minor', length=0)
     if t_names is not None:
         tbar.set_ticklabels(t_names, fontsize=10)
