@@ -50,3 +50,21 @@ def mr_current_regime(t, t0, t1=None, t2=None, t3=None):
 
     return np.select(conds, list(range(len(conds))))
 
+
+# ___________________________________________________________________________________________________________________
+
+def mr_linear_2signals(t, a, s, t0, t1, **kwargs):
+    signal1= t0(t)
+    signal2 = t1(t)
+    a_t = a[0] + a[1]*signal1 + a[2]*signal2
+    s_t = s[0] + s[1]*signal1 + s[2]*signal2
+    # Clip parameters to the allowed range
+    # Negative a allowed
+    a_t = np.maximum(a_t, 0.0)
+    s_t = np.maximum(s_t, 0.2)
+    # a_t = np.minimum(a_t, 16.0)
+    # s_t = np.minimum(s_t, 1.5)
+    a_t = np.minimum(a_t, 20.0)
+    s_t = np.minimum(s_t, 1.2)
+    return s_t, a_t
+

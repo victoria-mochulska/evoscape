@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import numpy as np
 import evoscape.modules as modules
 
@@ -72,6 +74,14 @@ def landscape_from_timecode(landscape_type, timecode, data_dir, gen, landscape_p
     landscape = landscape_type(module_list, A0=landscape_pars['A0'], regime=landscape_pars['regime'], n_regimes=5)
     return landscape
 
+
+def invert_landscape(input_landscape):
+    landscape = deepcopy(input_landscape)
+    landscape.A0 *= -1.
+    for module in landscape.module_list:
+        module.a *= -1.
+        module.s *= -1.
+    return landscape
 
 def transform_coords(module_list, old_coords, origin=0, direction=2, left=None, right=None, bottom=None, scale=False):
     '''

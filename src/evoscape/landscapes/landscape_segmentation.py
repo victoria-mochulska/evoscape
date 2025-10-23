@@ -10,8 +10,10 @@ class Somitogenesis_Landscape(Landscape):
         # kymo = np.zeros((ncells, time_pars[2]))
         self.morphogen_times = (t0_shift * np.arange(ncells), )
         self.init_cells(ncells, init_state, noise=noise)
-        traj, states = self.run_cells(*time_pars, noise, ndt=ndt)
-        kymo = traj[:, 0, :]  # x-coordinates of all cells
+        traj, states = self.run_cells(*time_pars, noise, ndt=ndt, get_states=False)
+
+        kymo_x = traj[0, :, :]  # x-coordinates of all cells
+        kymo_y = traj[1, :, :]
 
         # for cell_ind in range(ncells):
         #     self.morphogen_times = (t0_shift * cell_ind,)
@@ -19,8 +21,8 @@ class Somitogenesis_Landscape(Landscape):
         #     traj, states = self.run_cells(*time_pars, noise, ndt=ndt)
         #     kymo[cell_ind] = traj[0, 0, :]  # x-coordinate of the first (and only) cell in time
         self.morphogen_times = (0.,)
-        self.result = kymo
-        return kymo
+        self.result = (kymo_x, kymo_y)
+        return kymo_x
 
     def get_fitness(self, fitness_pars):
         time_pars = fitness_pars['time_pars']
@@ -36,6 +38,8 @@ class Somitogenesis_Landscape(Landscape):
         all_cross = np.concatenate((np.ones(len(cross_high), dtype=int), np.zeros(len(cross_low), dtype=int)))[
             np.argsort(all_ind)]
         n_boundaries = np.sum(np.diff(all_cross) != 0)
+        if 'n_boundaries' in fitness_pars:
+            n_boundaries = - np.abs((n_boundaries - fitness_pars['n_boundaries']))
         penalty = fitness_pars['penalty_weight'] * np.sum((kymo[:, -fitness_pars['t_stable']:] -
                                                            np.tile(np.array([kymo[:, -1]]).T,
                                                                    (1, fitness_pars['t_stable']))) ** 2)

@@ -35,6 +35,7 @@ class Population:
             fitness = start_fitness
         for landscape in self.landscape_list:
             landscape.fitness = fitness
+            landscape.result = self.landscape_list[0].result
 
     # ____________________________________________________________________________________________________________________
     def evolve(self, ngenerations, fitness_pars, saved_files_dir, save_each=10):

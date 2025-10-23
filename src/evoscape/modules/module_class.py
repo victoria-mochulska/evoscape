@@ -72,7 +72,11 @@ class Module:
             value = getattr(module, par)
             if par in par_limits:
                 if isinstance(value, np.ndarray):
-                    setattr(module, par, np.random.uniform(*par_limits[par], len(value)))
+                    if isinstance(par_limits[par][0], (list, tuple, np.ndarray)):
+                        arr = np.array([np.random.uniform(low, high) for (low, high) in par_limits[par]])
+                    else:
+                        arr = np.random.uniform(*par_limits[par], len(value))
+                    setattr(module, par, arr)
                 else:
                     setattr(module, par, np.random.uniform(*par_limits[par]))
             elif par in par_choice_values:
@@ -113,26 +117,41 @@ class Module:
         :param par_choice_values: dict of discrete possible values, e.g: {'a' : (0, 0.5, 1.)}
         """
         rand_par = random.choice(self.mutable_parameters_list)
+        attr = getattr(self, rand_par)
+        is_array = isinstance(attr, np.ndarray)
+        if is_array:
+            # pick an element to mutate
+            index = np.random.randint(attr.size)
+            #  resample if the element is immutable:
+            while index in self.immutable_idx:
+                index = np.random.randint(attr.size)
 
         if rand_par in self.par_limits:
-            new_val = np.random.uniform(*self.par_limits[rand_par])
+            # new_val = np.random.uniform(*self.par_limits[rand_par])
+            limits = self.par_limits[rand_par]
+            if is_array and isinstance(limits, (list, tuple)) and isinstance(limits[0], (list, tuple)):
+                # per-element limits
+                new_val = np.random.uniform(*limits[index])
+            else:
+                new_val = np.random.uniform(*limits)
+
         elif rand_par in self.par_choice_values:
             new_val = np.random.choice(self.par_choice_values[rand_par])
 
         elif rand_par in par_limits:
-            new_val = np.random.uniform(*par_limits[rand_par])
+            limits = par_limits[rand_par]
+            if is_array and isinstance(limits, (list, tuple)) and isinstance(limits[0], (list, tuple)):
+                # per-element limits
+                new_val = np.random.uniform(*limits[index])
+            else:
+                new_val = np.random.uniform(*limits)
+            # new_val = np.random.uniform(*par_limits[rand_par])
         elif rand_par in par_choice_values:
             new_val = np.random.choice(par_choice_values[rand_par])
         else:
             raise ValueError("Limits or choice values not provided for parameter " + rand_par)
 
-        attr = getattr(self, rand_par)
-        if isinstance(attr, np.ndarray):
-            index = np.random.randint(attr.size)
-            #  resample if the element is immutable:
-            while index in self.immutable_idx:
-                index = np.random.randint(attr.size)
-            #
+        if is_array:
             attr[index] = new_val
         else:
             setattr(self, rand_par, new_val)

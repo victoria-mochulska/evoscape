@@ -3,8 +3,33 @@ import random
 from copy import deepcopy
 
 from .. import mr_sigmoid
-from evoscape.modules.module_class import Node
+from evoscape.modules.module_class import Node, UnstableNode, Center, NegCenter
 
+def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
+    x, y = q_flat
+    xr = x[None, :] - xs
+    yr = y[None, :] - ys
+    r = np.sqrt(xr ** 2 + yr ** 2)
+
+    # w = np.zeros_like(r)
+    # mask = ~((a == 0) & (sig == 0))
+    nonzero_sig = np.where(sig == 0, 1, sig)
+    w = a * np.exp(-0.5 * (r / nonzero_sig) ** 2)
+
+    dx = Js[:, :, 0, 0] * xr + Js[:, :, 0, 1] * yr
+    dy = Js[:, :, 1, 0] * xr + Js[:, :, 1, 1] * yr
+
+    dX = A0 * (-(x - x0[0]) ** 3) + np.sum(w * dx, axis=0)
+    dY = A0 * (-(y - x0[1]) ** 3) + np.sum(w * dy, axis=0)
+    derivs = np.stack((dX, dY), axis=0)
+
+    if return_potentials:
+        coefs = sign * (1-curl) * sig ** 2
+        coefs_rot = (sign * curl) * sig ** 2
+        pot = np.sum(w * coefs, axis=0) + A0 / 4 * ((x - x0[0]) ** 4 + (y - x0[1]) ** 4)
+        pot_rot = np.sum(w * coefs_rot, axis=0)
+        return derivs, pot, pot_rot
+    return derivs
 
 class Landscape:
     def __init__(self, module_list=(), A0=0., init_cond=(0., 1.), regime=mr_sigmoid, n_regimes=2,
@@ -33,6 +58,7 @@ class Landscape:
         self.morphogen_times = morphogen_times
         self.used_fp_types = used_fp_types
         self.init_cond = init_cond
+        self.min_n_modules = len(module_list)
         self.max_n_modules = 15
 
         self.fitness = None  # stores calculated fitness
@@ -76,39 +102,84 @@ class Landscape:
         :param return_potentials: bool
         :return: tuple of arrays with x and y derivatives, potentials (optional)
         """
-        x = q[0]
-        y = q[1]
-        w = np.zeros((len(self.module_list), *x.shape))
-        sig = np.zeros((len(self.module_list)))
-        sign = np.zeros((len(self.module_list)), dtype='int')   # Sign of modules (+1 or -1)
-        curl = np.zeros((len(self.module_list)), dtype='bool')  # Is the module rotational (0 or 1)
-        dx, dy = np.zeros((len(self.module_list), *x.shape)), np.zeros((len(self.module_list), *x.shape))
-        for i, module in enumerate(self.module_list):
-            V, sig[i], A = module.get_current_pars(t, self.regime, *self.morphogen_times)
-            if module.__class__.__name__ == 'Node' or module.__class__.__name__ == 'NegCenter':
-                sign[i] = -1
-            else:
-                sign[i] = +1
-            if module.__class__.__name__ == 'Center' or module.__class__.__name__ == 'NegCenter':
-                curl[i] = 1
+        q = np.asarray(q)
+        grid_shape = q.shape[1:]
+        n_pts = q[1:].size
 
-            xr = x - module.x
-            yr = y - module.y
-            r = np.sqrt(xr ** 2 + yr ** 2)
-            w[i, :] = A * self.local_weight(r, sig[i])
-            dx[i, :], dy[i, :] = self.fixed_point(module, xr, yr)
-        derivs = self.A0 * np.array((-(x-self.x0[0]) ** 3, -(y-self.x0[1]) ** 3)) + (np.sum(w * dx, axis=0), np.sum(w * dy, axis=0))
+        if not self.module_list:
+            x, y = q
+            zeros = np.zeros(grid_shape)
+            derivs = np.stack([zeros, zeros], axis=0)
+            pot = self.A0 / 4 * ((x - self.x0[0]) ** 4 + (y - self.x0[1]) ** 4)
+            if return_potentials:
+                return derivs, pot, zeros
+            return derivs
+
+        q_flat = q.reshape(2, -1)
+        xs = np.array([m.x for m in self.module_list])[:, None]
+        ys = np.array([m.y for m in self.module_list])[:, None]
+        sign = np.array([-1 if isinstance(m, (Node, NegCenter)) else +1 for m in self.module_list])[:, None]
+        curl = np.array([1 if isinstance(m, (Center, NegCenter)) else 0 for m in self.module_list])[:, None]
+
+        Js = np.stack([m.J for m in self.module_list], axis=0)[:, None, :, :]
+
+        pars = [m.get_current_pars(t, self.regime, *self.morphogen_times)[1:] for m in self.module_list]
+        sig_list, a_list = zip(*pars)
+        sig = np.stack([np.broadcast_to(np.asarray(s), (n_pts,)) for s in sig_list], axis=0)
+        a = np.stack([np.broadcast_to(np.asarray(amp), (n_pts,)) for amp in a_list], axis=0)
+
+        res = _flow(q_flat, xs, ys, sign, curl, sig, a, Js, self.A0, self.x0, return_potentials)
+
         if return_potentials:
-            broadcast_shape = (len(self.module_list),) + (1,) * len(x.shape)
-            coefs = (~curl * sign * sig ** 2).reshape(broadcast_shape)
-            potential = np.sum(w * coefs, axis=0) + self.A0 / 4 * ((x-self.x0[0])**4 + (y - self.x0[1])**4)
-            coefs_rot = (curl * sign * sig ** 2).reshape(broadcast_shape)
-            rot_potential = np.sum(w * coefs_rot, axis=0)
-            # potential = np.sum(w * (~curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0) + self.A0 / 4 * (x ** 4 + y ** 4)
-            # rot_potential = np.sum(w * (curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0)
-
-            return derivs, potential, rot_potential
+            derivs, pot, pot_rot = res
+            derivs = derivs.reshape((2,) + grid_shape)
+            pot = pot.reshape(grid_shape)
+            pot_rot = pot_rot.reshape(grid_shape)
+            return derivs, pot, pot_rot
+        derivs = res.reshape((2,) + grid_shape)
         return derivs
+
+    # def __call__(self, t, q, return_potentials=False):
+    #     """
+    #     Evaluate the flow at coordinates q and time t
+    #     :param t: float
+    #     :param q: array of shape (2, m, n); q[0] are x-coordinates, q[1] are y-coordinates
+    #     :param return_potentials: bool
+    #     :return: tuple of arrays with x and y derivatives, potentials (optional)
+    #     """
+    #     x = q[0]
+    #     y = q[1]
+    #     w = np.zeros((len(self.module_list), *x.shape))
+    #     sig = np.zeros((len(self.module_list)))
+    #     sign = np.zeros((len(self.module_list)), dtype='int')   # Sign of modules (+1 or -1)
+    #     curl = np.zeros((len(self.module_list)), dtype='bool')  # Is the module rotational (0 or 1)
+    #     dx, dy = np.zeros((len(self.module_list), *x.shape)), np.zeros((len(self.module_list), *x.shape))
+    #     for i, module in enumerate(self.module_list):
+    #         V, sig[i], A = module.get_current_pars(t, self.regime, *self.morphogen_times)
+    #         if module.__class__.__name__ == 'Node' or module.__class__.__name__ == 'NegCenter':
+    #             sign[i] = -1
+    #         else:
+    #             sign[i] = +1
+    #         if module.__class__.__name__ == 'Center' or module.__class__.__name__ == 'NegCenter':
+    #             curl[i] = 1
+    #
+    #         xr = x - module.x
+    #         yr = y - module.y
+    #         r = np.sqrt(xr ** 2 + yr ** 2)
+    #         w[i, :] = A * self.local_weight(r, sig[i])
+    #         dx[i, :], dy[i, :] = self.fixed_point(module, xr, yr)
+    #     derivs = self.A0 * np.array((-(x-self.x0[0]) ** 3, -(y-self.x0[1]) ** 3)) + (np.sum(w * dx, axis=0), np.sum(w * dy, axis=0))
+    #     if return_potentials:
+    #         broadcast_shape = (len(self.module_list),) + (1,) * len(x.shape)
+    #         coefs = (~curl * sign * sig ** 2).reshape(broadcast_shape)
+    #         potential = np.sum(w * coefs, axis=0) + self.A0 / 4 * ((x-self.x0[0])**4 + (y - self.x0[1])**4)
+    #         coefs_rot = (curl * sign * sig ** 2).reshape(broadcast_shape)
+    #         rot_potential = np.sum(w * coefs_rot, axis=0)
+    #         # potential = np.sum(w * (~curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0) + self.A0 / 4 * (x ** 4 + y ** 4)
+    #         # rot_potential = np.sum(w * (curl * sign * sig ** 2)[:, np.newaxis, np.newaxis], axis=0)
+    #
+    #         return derivs, potential, rot_potential
+    #     return derivs
 
     # __________________________________________________________________________________________________________________
     # __________________________________ For evolutionary optimization _________________________________________________
@@ -144,10 +215,10 @@ class Landscape:
             # print('Deleting,', 'len =', len(self.module_list), ', r =', r)
             del_ind = np.random.choice(len(self.module_list))
             self.del_module(del_ind)
-        elif r < prob_pars['prob_add'] + prob_pars['prob_drop'] + prob_pars['prob_shuffle'] and len(
-                self.module_list) > 1:
-            # print('Shuffling,', 'len =', len(self.module_list), ', r =', r)
-            random.shuffle(self.module_list)
+        # elif r < prob_pars['prob_add'] + prob_pars['prob_drop'] + prob_pars['prob_shuffle'] and len(
+        #         self.module_list) > 1:
+        #     # print('Shuffling,', 'len =', len(self.module_list), ', r =', r)
+        #     random.shuffle(self.module_list)
         else:
             # print('Modifying,', ', r =', r)
             mod_ind = np.random.choice(len(self.module_list))
@@ -168,9 +239,10 @@ class Landscape:
         if r < prob_pars['prob_add'] or len(self.module_list) == 0:
             fp_type = random.choice(self.used_fp_types)
             self.add_module(fp_type.generate(par_limits, par_choice_values, n_regimes=self.n_regimes))
-        elif r < prob_pars['prob_add'] + prob_pars['prob_drop'] and len(self.module_list) > 1 \
+        elif r < prob_pars['prob_add'] + prob_pars['prob_drop'] and len(self.module_list) > self.min_n_modules \
                 or len(self.module_list) > self.max_n_modules:
-            del_ind = np.random.choice(len(self.module_list))
+            # del_ind = np.random.choice(len(self.module_list))
+            del_ind = np.random.randint(self.min_n_modules, len(self.module_list))
             self.del_module(del_ind)
         elif r < prob_pars['prob_add'] + prob_pars['prob_drop'] + prob_pars['prob_shuffle'] and len(
                 self.module_list) > 1:
@@ -268,19 +340,21 @@ class Landscape:
             prob = np.zeros((coordinate.shape[1], len(self.module_list) + 1))
             for i, module in enumerate(self.module_list):
                 V, st, at = module.get_current_pars(t, self.regime, *self.morphogen_times)
-                prob[:, i] = np.exp(
-                    -np.sum((coordinate.T - np.array((module.x, module.y))) ** 2, axis=1) / 2. / st ** 2) / st ** 2
-            # print(prob/2/np.pi)
+                if st == 0 or at == 0:
+                    prob[:, i] = 0.
+                else:
+                    prob[:, i] = np.exp(
+                        -np.sum((coordinate.T - np.array((module.x, module.y))) ** 2, axis=1) / 2. / st ** 2) / st ** 2
             prob[:, -1] = abs_threshold  # below this value cells will be assigned as 'unclustered'
             prob = (prob.T / np.sum(prob, axis=1)).T
             if abs_threshold == 0:
-                prob[:, -1] = prob_threshold  # probability threshold: for probs below this value cells will be assigned as 'unclustered'
+                prob[:, -1] = prob_threshold  # probability threshold: below this value cells will be assigned as 'unclustered'
             # print(prob*100)
             states = np.argmax(prob, axis=1)
             states[states == len(self.module_list)] = -1
         return states
 
-    def run_cells(self, t0, tf, nt, noise=0., ndt=50, frozen=False, t_freeze=None):
+    def run_cells(self, t0, tf, nt, noise=0., ndt=50, frozen=False, t_freeze=None, get_states=True):
         """
         Run trajectories for cells in the landscape.
         :param t0: float, start time
@@ -293,14 +367,19 @@ class Landscape:
         :return: traj (array of shape (2, n, nt)) and states (int array of shape (2, nt))
         """
         traj = np.empty((*self.cell_coordinates.shape, nt), dtype='float')
-        states = np.empty((self.cell_coordinates.shape[1], nt), dtype='int')
-        t = t0
         y = self.cell_coordinates
         traj[:, :, 0] = y
-        states[:, 0] = self.get_cell_states(t)
+        t = t0
         Delta_t = (tf - t0) / (nt - 1)
         dt = Delta_t / ndt
         sqrt_dt = np.sqrt(dt)
+
+        if get_states:
+            states = np.empty((self.cell_coordinates.shape[1], nt), dtype='int')
+            states[:, 0] = self.get_cell_states(t)
+        else:
+            states = None
+
         if frozen:
             def f(t, q):
                 return self(t_freeze, q)
@@ -311,8 +390,10 @@ class Landscape:
                 y += f(t, y) * dt + noise * np.random.standard_normal(y.shape) * sqrt_dt
                 t += dt
             traj[:, :, Delta_step] = y
-            states[:, Delta_step] = self.get_cell_states(t)
-        self.cell_states = states[:, -1]
+            if get_states:
+                states[:, Delta_step] = self.get_cell_states(t)
+        if get_states:
+            self.cell_states = states[:, -1]
         return traj, states
 
 # ______________________________________________________________________________________________________________________

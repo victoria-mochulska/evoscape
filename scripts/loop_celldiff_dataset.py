@@ -2,12 +2,12 @@ import random
 import os
 import warnings
 
-from landscapes.population_class import Population
-from landscapes.landscapes.landscape_dataset_fitness import CellDiff_Dataset_Landscape
-from landscapes.modules.module_class import Node
-from landscapes.morphogen_regimes import *
-from landscapes.landscape_visuals import *
-from landscapes.helper_functions import plot_compare_cell_proportions, get_cell_data
+from evoscape.population_class import Population
+from evoscape.landscapes.landscape_dataset_fitness import CellDiff_Dataset_Landscape
+from evoscape.modules.module_class import Node
+from evoscape.morphogen_regimes import *
+from evoscape.landscape_visuals import *
+from evoscape.helper_functions import plot_compare_cell_proportions, get_cell_data
 
 warnings.simplefilter('ignore')
 

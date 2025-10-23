@@ -31,7 +31,7 @@ class CellDiff_Dataset_Landscape(Landscape):
             self.morphogen_times = morphogen_times[k]
             cell_data = cell_data_matrices[k]
             cell_states = np.zeros(cell_data_matrices[0].shape)  # shape = (timepoints, states)
-            self.init_cells(fitness_pars['ncells'], fitness_pars['init_state'], noise=fitness_pars['noise'])
+            self.init_cells(fitness_pars['ncells'], fitness_pars['init_state'], noise=0.5*fitness_pars['noise'])
 
             traj, states = self.run_cells(*time_pars, fitness_pars['noise'], ndt=fitness_pars['ndt'])
             for timepoint in range(len(times)):

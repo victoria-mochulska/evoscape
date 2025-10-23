@@ -38,7 +38,7 @@ cmap_time = 'viridis'
 cmap_cells = scm.lipari
 
 
-def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types'):
+def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', circles=True):
     """ Simple visualization of landscape flow and modules in one regime. """
     density = 0.5
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
@@ -47,33 +47,40 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types'):
         if module.__class__.__name__ == 'Center' or module.__class__.__name__ == 'NegCenter':
             curl[i] = 1
 
-    for i, module in enumerate(landscape.module_list):
-        if module.a.size == 1 and module.s.size == 1 and regime == 0:
-            sig = float(module.s)
-            A = float(module.a)
-        else:
-            sig = module.s[regime]
-            A = module.a[regime]
-        if color_scheme == 'fp_types':
-            color = fp_type_colors[module.__class__.__name__]
-        elif color_scheme == 'order':
-            color = order_colors[i]
-        else:
-            color = 'grey'
+    if circles:
+        for i, module in enumerate(landscape.module_list):
+            if module.a.size == 1 and module.s.size == 1 and regime == 0:
+                sig = float(module.s)
+                A = float(module.a)
+            else:
+                sig = module.s[regime]
+                A = module.a[regime]
 
-        circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
-                                  fill=True, alpha=0.25 * np.sqrt(A), clip_on=True, linewidth=0))
+            if color_scheme == 'fp_types':
+                color = fp_type_colors[module.__class__.__name__]
+            elif color_scheme == 'order':
+                color = order_colors[i]
+            else:
+                color = 'grey'
+
+            # for negative amplitude - non-filled cicle
+            if A < 0:
+                fill = False
+                lw = 2
+            else:
+                fill = True
+                lw = 0
+            circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
+                                      fill=fill, alpha=0.22 * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
     morphogen_times = landscape.morphogen_times
     landscape.morphogen_times = np.arange(landscape.n_regimes) + 0.5
     (dX, dY), potential, rot_potential = landscape(float(regime), (xx, yy), return_potentials=True)
 
     fig, stream_ax = plt.subplots(1, 1, figsize=(5, 5))
     circles_ax = stream_ax
-
-    for i in range(len(landscape.module_list)):
-        circles_ax.add_patch(copy(circles[i]))
-        circles_ax.set_xlim((np.min(xx), np.max(xx)))
-        circles_ax.set_ylim((np.min(yy), np.max(yy)))
+    if circles:
+        for i in range(len(landscape.module_list)):
+            circles_ax.add_patch(copy(circles[i]))
 
     stream_ax.streamplot(xx, yy, dX, dY, density=density, arrowsize=2., arrowstyle='->', linewidth=1,
                          color='grey')
@@ -113,8 +120,15 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
             color = 'grey'
 
         if circles:
-            circle_patches.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
-                                  fill=True, alpha=circle_opacity * np.sqrt(A), clip_on=True, linewidth=0))
+            # for negative amplitude - non-filled cicle
+            if A < 0:
+                fill = False
+                lw = 2
+            else:
+                fill = True
+                lw = 0
+            circle_patches.append(plt.Circle((module.x, module.y), 1.18 * float(sig), color=color,
+                                  fill=fill, alpha=circle_opacity * np.sqrt(float(np.abs(A))), clip_on=True, linewidth=lw))
     (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
 
     fig, stream_ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -301,8 +315,15 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
                 color = order_colors[i]
             else:
                 color = 'grey'
-            circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
-                                      fill=True, alpha=0.25 * np.sqrt(A), clip_on=True, linewidth=0))
+            # for negative amplitude - non-filled cicle
+            if A < 0:
+                fill = False
+                lw = 2
+            else:
+                fill = True
+                lw = 0
+            circles.append(plt.Circle((module.x, module.y), 1.18 * float(sig), color=color,
+                                      fill=fill, alpha=0.22 * np.sqrt(float(np.abs(A))), clip_on=True, linewidth=lw))
 
         vrange = (np.max(rot_potential) - np.min(rot_potential))/2.
         if vrange == 0.:
