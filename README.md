@@ -32,11 +32,16 @@ evoscape/
 ├── module_helper_functions.py
 └── landscape_visuals.py
 
+- <b>examples</b>/: Example usage of Evoscape, quick optimization runs 
 - scripts/: Codes for parallelized optimization, multiple runs
-- notebooks/: Jupyter notebooks for exploration, analysis and figures
+- notebooks/: Jupyter notebooks used for analysis and figures
 </pre>
 
 
 ## 🚧 In development 
 * Tutorials
 * Interactive simulation
+
+### References 
+Scientific colormaps: Crameri, F. (2018), Scientific colour maps, doi:10.5281/
+zenodo.1243862
