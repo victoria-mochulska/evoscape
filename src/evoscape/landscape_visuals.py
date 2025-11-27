@@ -38,7 +38,7 @@ cmap_time = 'viridis'
 cmap_cells = scm.lipari
 
 
-def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', circles=True):
+def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', draw_circles=True):
     """ Simple visualization of landscape flow and modules in one regime. """
     density = 0.5
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
@@ -47,7 +47,7 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', circ
         if module.__class__.__name__ == 'Center' or module.__class__.__name__ == 'NegCenter':
             curl[i] = 1
 
-    if circles:
+    if draw_circles:
         for i, module in enumerate(landscape.module_list):
             if module.a.size == 1 and module.s.size == 1 and regime == 0:
                 sig = float(module.s)
@@ -78,7 +78,7 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', circ
 
     fig, stream_ax = plt.subplots(1, 1, figsize=(5, 5))
     circles_ax = stream_ax
-    if circles:
+    if draw_circles:
         for i in range(len(landscape.module_list)):
             circles_ax.add_patch(copy(circles[i]))
 
