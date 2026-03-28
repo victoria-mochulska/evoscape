@@ -1,4 +1,4 @@
-local_tests
+local_tests/
 /src/saved_files/saved_files_old/
 /src/evoscape/old_landscape_types/
 /alfyn/
@@ -14,3 +14,11 @@ local_tests
 /panels/
 /frames_old/
 /alfyn_results_rev/
+supplement/*
+**pycache**
+notebooks/local_notebooks/*
+dist/
+*DS_Store*
+.idea/
+src/saved_files/
+src/evoscape/landscapes/other/
