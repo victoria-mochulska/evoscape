@@ -4,6 +4,9 @@ from copy import deepcopy
 
 from .. import mr_sigmoid
 from evoscape.modules.module_class import Node, UnstableNode, Center, NegCenter
+from evoscape.morphogen_regimes import mr_const
+from jax import tree_util
+import jax.numpy as jnp
 
 def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
     x, y = q_flat
@@ -78,6 +81,83 @@ class Landscape:
         repr_str = repr_str[:-1]
         return repr_str
 
+    def get_module_infos(self, t):
+        """
+        code stolen from __call__, just kept the minimal informations
+        Evaluate the flow at coordinates q and time t
+        :param t: float
+        :param q: array of shape (2, m, n); q[0] are x-coordinates, q[1] are y-coordinates
+        :param return_potentials: bool
+        :return: tuple of arrays with x and y derivatives, potentials (optional)
+        """
+
+        if not self.module_list:
+            print("Landscape has no modules")
+            raise ValueError
+
+        xs = np.array([m.x for m in self.module_list])[:, None]
+        ys = np.array([m.y for m in self.module_list])[:, None]
+        sign = np.array([-1 if isinstance(m, (Node, NegCenter)) else +1 for m in self.module_list])[:, None]
+        curl = np.array([1 if isinstance(m, (Center, NegCenter)) else 0 for m in self.module_list])[:, None]
+
+        Js = np.stack([m.J for m in self.module_list], axis=0)[:, None, :, :]
+
+        pars = [m.get_current_pars(t, self.regime, *self.morphogen_times)[1:] for m in self.module_list]
+        sig_list, a_list = zip(*pars)
+
+        return xs, ys, sign, curl, sig_list, a_list, Js, self.A0, self.x0
+
+    def to_pytree(self, t):
+        ## This is not good as it is for the moment, because I want to delete the time dependency, and the q dependency
+        xs, ys, sign, curl, sig_list, a_list, Js, self.A0, self.x0 = self.get_module_infos(t)
+        module_params = {
+            "xs": xs,
+            "ys": ys,
+            "sig_list": sig_list,
+            "a_list": a_list,
+        }
+        module_infos = {
+            "sign": sign,
+            "curl": curl,
+            "Js": Js,
+            "A0" : self.A0,
+            "x0" : self.x0
+        }
+        return module_params, module_infos
+
+    @classmethod
+    def from_pytree(cls, module_params, module_infos):
+
+        ## It is necessary squeeze, or else I had errors later when using the landscape functions
+        def squeeze_if_array(x):
+            if isinstance(x, jnp.ndarray): 
+                return jnp.squeeze(x)
+            return x
+
+        module_params = tree_util.tree_map(squeeze_if_array, module_params)
+
+        xs = module_params["xs"]
+        ys = module_params["ys"]
+        a_list = module_params["a_list"]
+        sig_list = module_params["sig_list"]
+
+        curl = module_infos["curl"]
+        sign = module_infos["sign"]
+        A0 = module_infos["A0"]
+
+        module_list = []
+        for x, y, a, s, curl_, sign_ in zip(xs, ys, a_list, sig_list, curl, sign):
+            if curl_ == 0 and sign_ == 1:
+                module_list.append(UnstableNode(x, y, a, s))
+            elif curl_ == 0 and sign_ == -1:
+                module_list.append(Node(x, y, a, s))
+            elif curl_ == 1 and sign_ == 1:
+                module_list.append(Center(x, y, a, s))
+            elif curl_== 1 and sign_ == -1:
+                module_list.append(NegCenter(x, y, a, s))
+
+        landscape = cls(module_list, A0 = 0.1, regime=mr_const, n_regimes=1)
+        return landscape
 # ______________________________________________________________________________________________________________________
 # ______________________________ Landscape dynamics calculation ________________________________________________________
 
