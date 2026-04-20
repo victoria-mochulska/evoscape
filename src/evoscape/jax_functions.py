@@ -4,21 +4,23 @@ import jax.lax as lax
 import jax.random as jrnd
 import jax.numpy as jnp
 from jax import jit
-
-
+import jax
 
 @partial(jit, static_argnames=['return_potentials'])
 def _flow(t, q_flat, module_params, module_infos, return_potentials):
     """
     q_flat : the cells coordinates (2,n)
+
     xs, ys : coordinates of the different modules (m,), (m,)
+    sig_list : array containing the sigmas of the gaussian clusters so it should be (m,). 
+    a_list : array containing the intensity of the gaussian clusters. Same as before, the size is (m,).
+
     sign : array containing signs of the modules (m,) 
     curl : array containing 1 if there is curl or 0 if there is not (m,)
-    sig_list : array containing the sigmas of the gaussian clusters so it should be (m,). 
-            But to ease the calculations, it is duplicated for each cell so its size is (m,n)
-    a_list : array containing the intensity of the gaussian clusters. Same as before, the size is (m,n)
     A0, x0 : float
-    return_potentials : boolean
+    Js : jacobians of the modules
+
+    return_potentials : bool
     """
 
     ## converting the pytree into variables
@@ -33,14 +35,13 @@ def _flow(t, q_flat, module_params, module_infos, return_potentials):
     A0 = module_infos["A0"]
     x0 = module_infos["x0"] 
 
-    n_pts = q_flat.shape[1]        
-    sig = jnp.stack([jnp.broadcast_to(jnp.asarray(s), (n_pts,)) for s in sig_list], axis=0)
-    a = jnp.stack([jnp.broadcast_to(jnp.asarray(amp), (n_pts,)) for amp in a_list], axis=0)
+    a = a_list[:,None] * jnp.ones_like(q_flat)
+    sig = sig_list[:,None] * jnp.ones_like(q_flat)
 
     ## the code after this remains the same
     x, y = q_flat[0], q_flat[1]
-    xr = x[None] - xs
-    yr = y[None] - ys
+    xr = x[None] - xs[:,None]
+    yr = y[None] - ys[:,None]
 
     r = jnp.sqrt(xr ** 2 + yr ** 2)
     w = a * jnp.exp(-0.5 * (r / sig) ** 2)
@@ -99,3 +100,24 @@ def _integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, get
     traj = jnp.concatenate([y0[None], ys], axis=0).transpose(1, 2, 0)
     states = jnp.concatenate([state0[None], states], axis=0).T
     return key_final, traj, states
+
+@jit
+def state_probs(module_params, q):
+
+    xs = module_params["xs"]
+    ys = module_params["ys"]
+    sig_list = module_params["sig_list"]
+    a_list = module_params["a_list"]
+
+    probs = jnp.zeros((q.shape[1], a_list.shape[0]))
+
+    ## for the moment, I will not consider the case where a or sig is zero
+
+    x, y = q[0], q[1]
+
+    gaussian_values = jnp.exp(((x[:,None] - xs)**2 + (y[:,None] - ys)**2) / 2*sig_list**2) * 1/(jnp.sqrt(2*jnp.pi)*sig_list)
+    sum_values = jnp.sum(gaussian_values, axis=1)
+    probs = gaussian_values / sum_values[:,None]
+
+    return probs
+
