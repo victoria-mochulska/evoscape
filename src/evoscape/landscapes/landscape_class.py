@@ -111,10 +111,10 @@ class Landscape:
         ## This is not good as it is for the moment, because I want to delete the time dependency, and the q dependency
         xs, ys, sign, curl, sig_list, a_list, Js, self.A0, self.x0 = self.get_module_infos(t)
         module_params = {
-            "xs": xs,
-            "ys": ys,
-            "sig_list": sig_list,
-            "a_list": a_list,
+            "xs": jnp.asarray(xs),
+            "ys": jnp.asarray(ys),
+            "sig_list": jnp.asarray(sig_list),
+            "a_list": jnp.asarray(a_list),
         }
         module_infos = {
             "sign": sign,
@@ -123,6 +123,14 @@ class Landscape:
             "A0" : self.A0,
             "x0" : self.x0
         }
+
+        def squeeze_if_array(x):
+            if isinstance(x, jnp.ndarray): 
+                return jnp.squeeze(x)
+            return x
+        
+        module_params = tree_util.tree_map(squeeze_if_array, module_params)
+
         return module_params, module_infos
 
     @classmethod

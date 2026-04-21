@@ -9,6 +9,7 @@ import jax
 @partial(jit, static_argnames=['return_potentials'])
 def _flow(t, q_flat, module_params, module_infos, return_potentials):
     """
+    parameters :
     q_flat : the cells coordinates (2,n)
 
     xs, ys : coordinates of the different modules (m,), (m,)
@@ -21,6 +22,9 @@ def _flow(t, q_flat, module_params, module_infos, return_potentials):
     Js : jacobians of the modules
 
     return_potentials : bool
+
+    returns :
+    derivs : (2,n) array containing the derivative of each particle
     """
 
     ## converting the pytree into variables
@@ -35,8 +39,9 @@ def _flow(t, q_flat, module_params, module_infos, return_potentials):
     A0 = module_infos["A0"]
     x0 = module_infos["x0"] 
 
-    a = a_list[:,None] * jnp.ones_like(q_flat)
-    sig = sig_list[:,None] * jnp.ones_like(q_flat)
+    nb_cells = q_flat.shape[1]
+    a = a_list[:,None] * jnp.ones((1, nb_cells))
+    sig = sig_list[:,None] * jnp.ones((1, nb_cells))
 
     ## the code after this remains the same
     x, y = q_flat[0], q_flat[1]
@@ -71,9 +76,12 @@ def _integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, get
     ndt : number of steps performed between points of the trajectory, int
     get_states(t, y) : a function that returns a (n,) array containing the state of each cell
     y0 : array (2, n) containing all the particles (also named q_flat sometimes)
+
+    returns :
+    traj : (2, n, nt) array : coordinate[i] of the cell[j] at datapoint[k]
+    states : (n, nt) array : state of cell[i] at datapoint[k]
     """
 
-    ## the code after stays the same
     dt = (tf - t0) / (nt - 1) / ndt
     sqrt_dt = jnp.sqrt(dt)
 
@@ -103,19 +111,21 @@ def _integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, get
 
 @jit
 def state_probs(module_params, q):
+    """
+    returns :
+    probs : (n, m) array containing the probability of cell[i] to be in state[j]
+    """
 
     xs = module_params["xs"]
     ys = module_params["ys"]
     sig_list = module_params["sig_list"]
     a_list = module_params["a_list"]
 
-    probs = jnp.zeros((q.shape[1], a_list.shape[0]))
-
-    ## for the moment, I will not consider the case where a or sig is zero
+    ## This code does not consider the case where a or sig is zero
 
     x, y = q[0], q[1]
 
-    gaussian_values = jnp.exp(((x[:,None] - xs)**2 + (y[:,None] - ys)**2) / 2*sig_list**2) * 1/(jnp.sqrt(2*jnp.pi)*sig_list)
+    gaussian_values = jnp.exp(((x[:,None] - xs)**2 + (y[:,None] - ys)**2) / 2*sig_list**2) * a_list/(jnp.sqrt(2*jnp.pi)*sig_list)
     sum_values = jnp.sum(gaussian_values, axis=1)
     probs = gaussian_values / sum_values[:,None]
 

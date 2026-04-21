@@ -463,6 +463,45 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, s=6, frozen=False
         ax.set_yticks([])
     return fig
 
+def plot_traj(traj, states, t0, tf, nt, L, s=6, state_names=None, t_ticks=None, t_names=None):
+    """ Integrate trajectories for cells and visualize in 2 panels: colored by time and by cell state """
+
+    fig = plt.figure(figsize=(9, 5))
+    gs = GridSpec(2, 2, height_ratios=[20, 1], hspace=0.1, wspace=0.05)
+    ax0, ax1 = fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])
+    ax_cbar, ax_state_cbar = fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1])
+
+    time_values = np.tile(np.arange(nt), (states.shape[0], 1))
+    ax0.scatter(traj[0, :, :], traj[1, :, :], s=s, alpha=0.2, c=time_values, cmap=cmap_time, edgecolor=None)
+    sc0 = ax0.scatter(2*L*np.ones(nt), 2*L*np.ones(nt), c=np.linspace(t0, tf, nt), cmap=cmap_time, alpha=0.7, s=0.01, edgecolors='none')
+    tbar = fig.colorbar(sc0, cax=ax_cbar, orientation='horizontal', label='Time')
+    if t_ticks is not None:
+        if isinstance(t_ticks, int):
+            tbar.set_ticks(np.linspace(t0, tf, t_ticks))
+        else:
+            tbar.set_ticks(np.linspace(*t_ticks))
+    else:
+        tbar.set_ticks(np.linspace(t0, tf, 7))
+    tbar.ax.tick_params(which='minor', length=0)
+    if t_names is not None:
+        tbar.set_ticklabels(t_names, fontsize=10)
+
+    ax1.scatter(traj[0, :, :], traj[1, :, :], s=s, alpha=0.2, c=states, cmap=cmap_state, norm=norm_state, edgecolor=None)
+    state_ticks = np.arange(len(order_colors))
+    sc1 = ax1.scatter([2 * L] * len(order_colors), [2 * L] * len(order_colors), c=state_ticks, cmap=cmap_state, norm=norm_state, alpha=0.5, s=0.01)
+    cbar = fig.colorbar(sc1, cax=ax_state_cbar, orientation='horizontal', label='Cell state')
+
+    cbar.set_ticks(state_ticks)
+    cbar.ax.tick_params(which='both', length=0)
+    if state_names is not None:
+        cbar.set_ticklabels(state_names)
+
+    for ax in [ax0, ax1]:
+        ax.set(xlim=[-L, L], ylim=[-L, L], aspect='equal')
+        ax.set_xticks([])
+        ax.set_yticks([])
+    return fig
+
 
 def circle_plot(landscape, regime=None, L=6, color_scheme='order', lw=4):
     fig = plt.figure(figsize=(7, 7))
