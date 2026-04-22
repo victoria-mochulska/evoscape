@@ -6,11 +6,11 @@ import jax.numpy as jnp
 from jax import jit
 import jax
 
-@partial(jit, static_argnames=['return_potentials'])
-def _flow(t, q_flat, module_params, module_infos, return_potentials):
+@jit
+def flow(t, q, module_params, module_infos):
     """
     parameters :
-    q_flat : the cells coordinates (2,n)
+    q : the cells coordinates (2,n)
 
     xs, ys : coordinates of the different modules (m,), (m,)
     sig_list : array containing the sigmas of the gaussian clusters so it should be (m,). 
@@ -39,12 +39,12 @@ def _flow(t, q_flat, module_params, module_infos, return_potentials):
     A0 = module_infos["A0"]
     x0 = module_infos["x0"] 
 
-    nb_cells = q_flat.shape[1]
+    nb_cells = q.shape[1]
     a = a_list[:,None] * jnp.ones((1, nb_cells))
     sig = sig_list[:,None] * jnp.ones((1, nb_cells))
 
     ## the code after this remains the same
-    x, y = q_flat[0], q_flat[1]
+    x, y = q[0], q[1]
     xr = x[None] - xs[:,None]
     yr = y[None] - ys[:,None]
 
@@ -58,24 +58,45 @@ def _flow(t, q_flat, module_params, module_infos, return_potentials):
     dY = A0 * (-(y - x0[1]) ** 3) + jnp.sum(w * dy, axis=0)
     derivs = jnp.stack((dX, dY), axis=0)
 
-    if return_potentials:
-        coefs = sign * (1-curl) * sig ** 2
-        coefs_rot = (sign * curl) * sig ** 2
-        pot = jnp.sum(w * coefs[:, None], axis=0) + A0 / 4 * ((x - x0[0]) ** 4 + (y - x0[1]) ** 4)
-        pot_rot = jnp.sum(w * coefs_rot[:, None], axis=0)
-        return derivs, pot, pot_rot
     return derivs
 
+@jit
+def compute_potentials(q, module_params, module_infos):
+    xs = module_params["xs"]
+    ys = module_params["ys"]
+    sig_list = module_params["sig_list"]
+    a_list = module_params["a_list"]
+
+    sign = module_infos["sign"]
+    curl = module_infos["curl"]
+    Js = module_infos["Js"]
+    A0 = module_infos["A0"]
+    x0 = module_infos["x0"] 
+
+    x, y = q[0], q[1]
+
+    xr = x[None] - xs[:,None]
+    yr = y[None] - ys[:,None]
+
+    r = jnp.sqrt(xr ** 2 + yr ** 2)
+    w = a_list * jnp.exp(-0.5 * (r / sig_list) ** 2)
+
+    coefs = sign * (1-curl) * sig_list ** 2
+    coefs_rot = (sign * curl) * sig_list ** 2
+    pot = jnp.sum(w * coefs[:, None], axis=0) + A0 / 4 * ((x - x0[0]) ** 4 + (y - x0[1]) ** 4)
+    pot_rot = jnp.sum(w * coefs_rot[:, None], axis=0)
+
+    return pot, pot_rot
 
 @partial(jit, static_argnames=['nt', 'ndt', 'get_states'])
-def _integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, get_states):
+def integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, get_states):
     """
     key : jax key, to create random numbers with jax
     tf, t0 : floats
     nt : number of points of a trajectory, int
     ndt : number of steps performed between points of the trajectory, int
     get_states(t, y) : a function that returns a (n,) array containing the state of each cell
-    y0 : array (2, n) containing all the particles (also named q_flat sometimes)
+    y0 : array (2, n) containing all the particles (also named q sometimes)
 
     returns :
     traj : (2, n, nt) array : coordinate[i] of the cell[j] at datapoint[k]
@@ -92,7 +113,7 @@ def _integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, get
 
         def inner_step(carry, eta):
             t, y = carry
-            deriv = _flow(t, y, module_params, module_infos, return_potentials=False)
+            deriv = flow(t, y, module_params, module_infos)
 
             y = y + deriv * dt + noise * eta * sqrt_dt
             t = t + dt
