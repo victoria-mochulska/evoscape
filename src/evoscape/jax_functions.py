@@ -6,8 +6,11 @@ import jax.numpy as jnp
 from jax import jit
 import jax
 
-@jit
-def flow(t, q, module_params, module_infos):
+from evoscape.mr_jax import mr_const_jax
+
+
+@partial(jit, static_argnames = ["mr_regime"])
+def flow(t, q, module_params, module_infos, mr_regime=mr_const_jax):
     """
     parameters :
     q : the cells coordinates (2,n)
@@ -27,11 +30,8 @@ def flow(t, q, module_params, module_infos):
     derivs : (2,n) array containing the derivative of each particle
     """
 
-    ## converting the pytree into variables
-    xs = module_params["xs"]
-    ys = module_params["ys"]
-    sig_list = module_params["sig_list"]
-    a_list = module_params["a_list"]
+    # time dependency. the new module_params is a minimal dictionnary with 1d arrays
+    xs, ys, sig_list, a_list = mr_regime(t, module_params)
 
     sign = module_infos["sign"]
     curl = module_infos["curl"]
@@ -60,13 +60,77 @@ def flow(t, q, module_params, module_infos):
 
     return derivs
 
-@jit
-def compute_potentials(q, module_params, module_infos):
-    xs = module_params["xs"]
-    ys = module_params["ys"]
-    sig_list = module_params["sig_list"]
-    a_list = module_params["a_list"]
+@partial(jit, static_argnames=['mr_regime'])
+def state_probs(t, q, module_params, mr_regime=mr_const_jax):
+    """
+    returns :
+    probs : (n, m) array containing the probability of cell[i] to be in state[j]
+    """
 
+    xs, ys, sig_list, a_list = mr_regime(t, module_params)
+
+    ## This code does not consider the case where a or sig is zero
+
+    x, y = q[0], q[1]
+
+    gaussian_values = jnp.exp(((x[:,None] - xs)**2 + (y[:,None] - ys)**2) / 2*sig_list**2) * a_list/(jnp.sqrt(2*jnp.pi)*sig_list)
+    sum_values = jnp.sum(gaussian_values, axis=1)
+    probs = gaussian_values / sum_values[:,None]
+
+    return probs
+
+
+@partial(jit, static_argnames=['nt', 'ndt', 'mr_regime'])
+def integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, mr_regime=mr_const_jax):
+    """
+    key : jax key, to create random numbers with jax
+    tf, t0 : floats
+    nt : number of points of a trajectory, int
+    ndt : number of steps performed between points of the trajectory, int
+    get_states(t, y) : a function that returns a (n,) array containing the state of each cell
+    y0 : array (2, n) containing all the particles (also named q sometimes)
+
+    returns :
+    traj : (2, n, nt) array : coordinate[i] of the cell[j] at datapoint[k]
+    states : (m, n, nt) array : state probability of cell[j] belonging to module[i] at datapoint[k]
+    """
+
+    dt = (tf - t0) / (nt - 1) / ndt
+    sqrt_dt = jnp.sqrt(dt)
+
+    def outer_step(carry, _):
+        key, t, y = carry
+        key, subkey = jrnd.split(key)
+        etas = jrnd.normal(subkey, (ndt,) + y.shape, dtype=y.dtype)
+
+        def inner_step(carry, eta):
+            t, y = carry
+            deriv = flow(t, y, module_params, module_infos, mr_regime)
+
+            y = y + deriv * dt + noise * eta * sqrt_dt
+            t = t + dt
+            return (t, y), None
+
+        (t, y), _ = lax.scan(inner_step, (t, y), etas)
+        s = state_probs(t, y, module_params, mr_regime)
+        return (key, t, y), (y, s)
+
+    state0 = state_probs(t0, y0, module_params, mr_regime)
+    (key_final, _, _), (ys, states) = lax.scan(outer_step, (key, t0, y0), None, length=nt - 1)
+
+    traj = jnp.concatenate([y0[None], ys], axis=0).transpose(1, 2, 0)
+    states = jnp.concatenate([state0[None], states], axis=0).T
+    return key_final, traj, states
+
+
+
+@jit
+def compute_potentials(t, q, module_params, module_infos, mr_regime=mr_const_jax):
+
+    # time dependency
+    xs, ys, sig_list, a_list = mr_regime(t, module_params)
+
+    ## converting the pytree into variables
     sign = module_infos["sign"]
     curl = module_infos["curl"]
     Js = module_infos["Js"]
@@ -87,68 +151,3 @@ def compute_potentials(q, module_params, module_infos):
     pot_rot = jnp.sum(w * coefs_rot[:, None], axis=0)
 
     return pot, pot_rot
-
-@partial(jit, static_argnames=['nt', 'ndt', 'get_states'])
-def integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, get_states):
-    """
-    key : jax key, to create random numbers with jax
-    tf, t0 : floats
-    nt : number of points of a trajectory, int
-    ndt : number of steps performed between points of the trajectory, int
-    get_states(t, y) : a function that returns a (n,) array containing the state of each cell
-    y0 : array (2, n) containing all the particles (also named q sometimes)
-
-    returns :
-    traj : (2, n, nt) array : coordinate[i] of the cell[j] at datapoint[k]
-    states : (n, nt) array : state of cell[i] at datapoint[k]
-    """
-
-    dt = (tf - t0) / (nt - 1) / ndt
-    sqrt_dt = jnp.sqrt(dt)
-
-    def outer_step(carry, _):
-        key, t, y = carry
-        key, subkey = jrnd.split(key)
-        etas = jrnd.normal(subkey, (ndt,) + y.shape, dtype=y.dtype)
-
-        def inner_step(carry, eta):
-            t, y = carry
-            deriv = flow(t, y, module_params, module_infos)
-
-            y = y + deriv * dt + noise * eta * sqrt_dt
-            t = t + dt
-            return (t, y), None
-
-        (t, y), _ = lax.scan(inner_step, (t, y), etas)
-        s = get_states(t, y)
-        return (key, t, y), (y, s)
-
-    state0 = get_states(t0, y0)
-    (key_final, _, _), (ys, states) = lax.scan(outer_step, (key, t0, y0), None, length=nt - 1)
-
-    traj = jnp.concatenate([y0[None], ys], axis=0).transpose(1, 2, 0)
-    states = jnp.concatenate([state0[None], states], axis=0).T
-    return key_final, traj, states
-
-@jit
-def state_probs(module_params, q):
-    """
-    returns :
-    probs : (n, m) array containing the probability of cell[i] to be in state[j]
-    """
-
-    xs = module_params["xs"]
-    ys = module_params["ys"]
-    sig_list = module_params["sig_list"]
-    a_list = module_params["a_list"]
-
-    ## This code does not consider the case where a or sig is zero
-
-    x, y = q[0], q[1]
-
-    gaussian_values = jnp.exp(((x[:,None] - xs)**2 + (y[:,None] - ys)**2) / 2*sig_list**2) * a_list/(jnp.sqrt(2*jnp.pi)*sig_list)
-    sum_values = jnp.sum(gaussian_values, axis=1)
-    probs = gaussian_values / sum_values[:,None]
-
-    return probs
-
