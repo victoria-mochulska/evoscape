@@ -2,13 +2,12 @@ import numpy as np
 import random
 from copy import deepcopy
 
-from .. import mr_sigmoid
 from evoscape.modules.module_class import Node, UnstableNode, Center, NegCenter
-from evoscape.morphogen_regimes import mr_const
+from evoscape.morphogen_regimes import mr_const, mr_sigmoid, mr_piecewise
 from jax import tree_util
 import jax.numpy as jnp
 
-def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
+def flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
     x, y = q_flat
     xr = x[None, :] - xs
     yr = y[None, :] - ys
@@ -81,14 +80,11 @@ class Landscape:
         repr_str = repr_str[:-1]
         return repr_str
 
-    def get_module_infos(self, t):
+    def _get_module_infos(self):
         """
         code stolen from __call__, just kept the minimal informations
-        Evaluate the flow at coordinates q and time t
         :param t: float
-        :param q: array of shape (2, m, n); q[0] are x-coordinates, q[1] are y-coordinates
-        :param return_potentials: bool
-        :return: tuple of arrays with x and y derivatives, potentials (optional)
+        :param q: array of shape (2, n); q[0] are x-coordinates, q[1] are y-coordinates
         """
 
         if not self.module_list:
@@ -102,14 +98,14 @@ class Landscape:
 
         Js = np.stack([m.J for m in self.module_list], axis=0)[:, None, :, :]
 
-        pars = [m.get_current_pars(t, self.regime, *self.morphogen_times)[1:] for m in self.module_list]
-        sig_list, a_list = zip(*pars)
+        a_list = np.asarray([m.a for m in self.module_list])
+        sig_list = np.asarray([m.s for m in self.module_list])
 
         return xs, ys, sign, curl, sig_list, a_list, Js, self.A0, self.x0
 
-    def to_pytree(self, t):
+    def to_pytree(self):
         ## This is not good as it is for the moment, because I want to delete the time dependency, and the q dependency
-        xs, ys, sign, curl, sig_list, a_list, Js, self.A0, self.x0 = self.get_module_infos(t)
+        xs, ys, sign, curl, sig_list, a_list, Js, self.A0, self.x0 = self._get_module_infos()
         module_params = {
             "xs": jnp.asarray(xs),
             "ys": jnp.asarray(ys),
@@ -134,9 +130,16 @@ class Landscape:
         return module_params, module_infos
 
     @classmethod
-    def from_pytree(cls, module_params, module_infos):
+    def from_pytree(cls, module_params, module_infos, mr_regime=mr_const, n_regimes=0, morphogen_times=(0.,), tau=1.):
+        """
+        Because the pytree is minimal, there are lots of parameters to add in order to have a complete landscape
+        mr_regime : corresponds to the morphogen regime we use. By default it is mr_const
+        n_regimes : when the default is mr_const, n_regimes should be 0
+        morphogen_times : is (0.,) but this is arbitrary
+        tau : used when the mr_regime=mr_sigmoid. It doesn't hurt to add it to the module object anyway
+        """
 
-        ## It is necessary squeeze, or else I had errors later when using the landscape functions
+        ## It is necessary to squeeze, because the array won't have a good shape later and it causes problem later
         def squeeze_if_array(x):
             if isinstance(x, jnp.ndarray): 
                 return jnp.squeeze(x)
@@ -152,19 +155,20 @@ class Landscape:
         curl = module_infos["curl"]
         sign = module_infos["sign"]
         A0 = module_infos["A0"]
+        x0 = module_infos["x0"]
 
         module_list = []
         for x, y, a, s, curl_, sign_ in zip(xs, ys, a_list, sig_list, curl, sign):
             if curl_ == 0 and sign_ == 1:
-                module_list.append(UnstableNode(x, y, a, s))
+                module_list.append(UnstableNode(x, y, a, s, tau=tau))
             elif curl_ == 0 and sign_ == -1:
-                module_list.append(Node(x, y, a, s))
+                module_list.append(Node(x, y, a, s, tau=tau))
             elif curl_ == 1 and sign_ == 1:
-                module_list.append(Center(x, y, a, s))
+                module_list.append(Center(x, y, a, s, tau=tau))
             elif curl_== 1 and sign_ == -1:
-                module_list.append(NegCenter(x, y, a, s))
+                module_list.append(NegCenter(x, y, a, s, tau=tau))
 
-        landscape = cls(module_list, A0 = 0.1, regime=mr_const, n_regimes=1)
+        landscape = cls(module_list, A0 = A0, x0=x0, regime=mr_regime, n_regimes=n_regimes, morphogen_times=morphogen_times)
         return landscape
 # ______________________________________________________________________________________________________________________
 # ______________________________ Landscape dynamics calculation ________________________________________________________
@@ -216,7 +220,7 @@ class Landscape:
         sig = np.stack([np.broadcast_to(np.asarray(s), (n_pts,)) for s in sig_list], axis=0)
         a = np.stack([np.broadcast_to(np.asarray(amp), (n_pts,)) for amp in a_list], axis=0)
 
-        res = _flow(q_flat, xs, ys, sign, curl, sig, a, Js, self.A0, self.x0, return_potentials)
+        res = flow(q_flat, xs, ys, sign, curl, sig, a, Js, self.A0, self.x0, return_potentials)
 
         if return_potentials:
             derivs, pot, pot_rot = res

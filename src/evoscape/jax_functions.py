@@ -1,10 +1,10 @@
-
 from functools import partial
 import jax.lax as lax
 import jax.random as jrnd
 import jax.numpy as jnp
 from jax import jit
-import jax
+
+import numpy as np
 
 from evoscape.mr_jax import mr_const_jax
 
@@ -79,6 +79,10 @@ def state_probs(t, q, module_params, mr_regime=mr_const_jax):
 
     return probs
 
+@jit
+def get_states_from_probs(state_probs):
+    return jnp.argmax(state_probs, axis=0)
+
 
 @partial(jit, static_argnames=['nt', 'ndt', 'mr_regime'])
 def integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, mr_regime=mr_const_jax):
@@ -93,6 +97,7 @@ def integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, mr_r
     returns :
     traj : (2, n, nt) array : coordinate[i] of the cell[j] at datapoint[k]
     states : (m, n, nt) array : state probability of cell[j] belonging to module[i] at datapoint[k]
+            We cannot take the argmax of these probabilities because we need them to be differentiable
     """
 
     dt = (tf - t0) / (nt - 1) / ndt
@@ -124,7 +129,7 @@ def integrate(key, y0, t0, tf, nt, ndt, noise, module_infos, module_params, mr_r
 
 
 
-@jit
+@partial(jit, static_argnames=["mr_regime"])
 def compute_potentials(t, q, module_params, module_infos, mr_regime=mr_const_jax):
 
     # time dependency
@@ -151,3 +156,5 @@ def compute_potentials(t, q, module_params, module_infos, mr_regime=mr_const_jax
     pot_rot = jnp.sum(w * coefs_rot[:, None], axis=0)
 
     return pot, pot_rot
+
+

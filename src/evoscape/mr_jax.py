@@ -1,5 +1,4 @@
 from jax.tree_util import tree_map
-
 import jax
 import jax.numpy as jnp
 
@@ -36,5 +35,4 @@ def mr_piecewise_jax(t, module_params, t_list):
     s_t = sig_array[:, idx]
 
     return xs, ys, s_t, a_t
-
 
