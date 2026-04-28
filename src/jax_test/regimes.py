@@ -1,5 +1,6 @@
 import jax.numpy as jnp
-
+from .landscape_pytree_class import LandscapeDynamic, LandscapeStatic
+from jax.tree_util import Partial
 def mr_const(t, a, s):
     a = jnp.atleast_1d(a)
     s = jnp.atleast_1d(s)
@@ -70,4 +71,22 @@ regimes = (
     mr_linear_2signals
 )
 
+def wrapped_regime(static: LandscapeStatic, signal_param=None):
+    regime_number = static.regime
+    if regime_number == 0:
+        return regimes[regime_number]
+    t_list = static.morphogen_times
 
+    # All modules are supposed to have the same tau
+    if regime_number == 1:
+        return Partial(regimes[regime_number], t_list = t_list, tau= static.module.tau[0])
+    
+    if regime_number == 2:
+         return Partial(regimes[regime_number], t_list = t_list)
+    
+    if regime_number == 3:
+        signal0, signal1 = signal_param
+        return Partial(regimes[regime_number], t_list = t_list, signal0=signal0,signal1=signal1)
+    else:
+        NotImplemented
+    

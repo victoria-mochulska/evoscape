@@ -2,7 +2,7 @@ from .landscape_pytree import landscape_to_pytree
 from .optim import make_step, clip_dynamic, run_optimization
 from .utils import init_cell
 from .dynamics import _integrate
-
+from .regimes import wrapped_regime
 # Main function running the landscape optimization 
 def run_experiment(
     landscape,
@@ -15,13 +15,14 @@ def run_experiment(
     noise,
     iterations,
     η,
-    regime,
     get_states,
     loss_function, 
-    loss_param= None
+    loss_param= None,
+    signal_param = None
 ):
     dynamic, static = landscape_to_pytree(landscape)
 
+    regime = wrapped_regime(static, signal_param)
     if loss_param is None:
         def loss_fn(dyn, key):
             return loss_function(dyn, static,  n, t0, tf, nt, ndt, noise, key, regime, get_states)

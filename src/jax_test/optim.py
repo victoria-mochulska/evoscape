@@ -2,7 +2,7 @@ import jax.random as jrd
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from jax import value_and_grad
+from jax import value_and_grad, jit
 from jax.lax import scan
 
 # Clipping function for non negative value allowed. Clipping values should be chosen wisely 
@@ -51,6 +51,7 @@ def make_step(loss_fn, η, clip_fn):
     return step
 
 # Training function
+@jit(static_argnames=('step_fn','iterations'))
 def run_optimization(dynamic, key, step_fn, iterations):
     (dynamic, key), losses = scan(
         step_fn,
