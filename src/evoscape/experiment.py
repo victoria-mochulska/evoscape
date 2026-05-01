@@ -4,9 +4,10 @@ from functools import partial
 from jax import jit, grad, tree_util
 import jax.numpy as jnp
 import jax.random as jrnd
+import jax.lax as lax
 import jax
 
-from evoscape.jax_functions import integrate, get_states_from_probs
+from evoscape.jax_functions import integrate, state_probs
 from evoscape.mr_jax import mr_sigmoid_jax, mr_const_jax, mr_piecewise_jax
 
 from evoscape.landscapes.landscape_class import Landscape
@@ -19,6 +20,7 @@ class Experiment:
         # Things the user can configure via setters 
         self.sim_params: Dict[str, Any] = {}
         self.q_flat = None
+        self.get_cell_states = state_probs
 
         self.regime_type = None
         self.regime = None
@@ -55,6 +57,7 @@ class Experiment:
             self.tau = tau
             self.regime = partial(mr_sigmoid_jax, t0=t0, tau=tau)
 
+
     def set_simulation(self, t0: float, tf: float, nt: int, ndt: int, noise: float):
         """Simulation parameters passed to integrate."""
         self.sim_params = dict(
@@ -64,6 +67,15 @@ class Experiment:
             ndt=ndt,
             noise=noise,
         )
+    
+    # From an architectural standpoint, this isn't best practice because the user has to use `module_params` within their function.
+    # But it's very convenient for quickly experimenting with new functions.
+    def set_state_probs(self, get_cell_states):
+        """
+        get_cell_states must be a function of (t, y, module_params, mr_regime) and return a (n,m) array of 
+        """
+        self.get_cell_states = get_cell_states
+
 
     # ------------------------------------------------------------------
     # GETTERS
@@ -79,7 +91,9 @@ class Experiment:
 
         mr_regime = corresponding_mr[self.regime_type]
         n_regimes = self.module_infos["curl"].shape[0]
-        morphogen_times = tuple(self.t_list)
+
+        morphogen_times = None
+        if self.t_list is not None : morphogen_times = tuple(self.t_list)
         
         return Landscape.from_pytree(
             self.module_params,
@@ -105,10 +119,21 @@ class Experiment:
         module_infos = self.module_infos 
         module_params = self.module_params
 
-        _, traj, states = integrate(key,  q_flat, t0, tf, nt, ndt, noise, module_infos, module_params, mr_regime=self.regime)
+        # way to much parameters...
+        _, traj, states = integrate(
+            key,  
+            q_flat, 
+            t0, 
+            tf, 
+            nt, 
+            ndt, 
+            noise, 
+            module_infos, 
+            module_params, 
+            mr_regime=self.regime, 
+            get_cell_states=self.get_cell_states
+        )
 
-        states = jnp.argmax(states, axis=0) ## states are actually state probabilities
-        
         return traj, states, t0, tf, nt
 
     # ------------------------------------------------------------------
@@ -132,21 +157,42 @@ class Experiment:
         module_infos = self.module_infos 
         module_params = self.module_params
 
-        def fitness(module_params, module_infos, key, q_flat, t0, tf, nt, ndt, noise):
-            key_final, traj, states = integrate(key,  q_flat, t0, tf, nt, ndt, noise, module_infos, module_params, mr_regime=self.regime)
+        def fitness(module_params, module_infos, key, q_flat, t0, tf, noise):
+            key_final, traj, states = integrate(
+                key,  
+                q_flat, 
+                t0, 
+                tf, 
+                nt, 
+                ndt, 
+                noise,
+                module_infos, 
+                module_params, 
+                mr_regime=self.regime, 
+                get_cell_states=self.get_cell_states
+            )
             return user_fitness(traj, states)
 
-        grad_fn = jit(grad(fitness), static_argnames=['nt', 'ndt']) # nt and ndt are used as size to create arrays, hence we need to make them static to jit the function
+        grad_fn = jit(grad(fitness)) # nt and ndt are used as size to create arrays, hence we need to make them static to jit the function
         fitness_vals = []
 
-        for _ in range(steps):
-            fitness_vals.append(fitness(module_params, module_infos, key,  q_flat, t0, tf, nt, ndt, noise))
-            grad_ = grad_fn(module_params, module_infos, key,  q_flat, t0, tf, nt, ndt, noise)
+        def train_step(carry, x):
+
+            module_params, module_infos, key,  q_flat, t0, tf, noise = carry
+            key, subkey = jrnd.split(key)
+
+            grad_ = grad_fn(module_params, module_infos, subkey,  q_flat, t0, tf, noise)
             module_params = tree_util.tree_map(
                 lambda p, g : p - lr * g,
                 module_params,
                 grad_
             )
+            y = fitness(module_params, module_infos, subkey,  q_flat, t0, tf, noise)
+
+            return (module_params, module_infos, key,  q_flat, t0, tf, noise), y
+
+        carry_final, fitness_vals = lax.scan(train_step, (module_params, module_infos, key,  q_flat, t0, tf, noise), length=steps)
+        module_params, module_infos, key,  q_flat, t0, tf, noise = carry_final
 
         self.module_params = module_params
 
