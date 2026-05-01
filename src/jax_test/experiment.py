@@ -8,6 +8,7 @@ def run_experiment(
     landscape,
     key,
     n,
+    cell_noise,
     t0,
     tf,
     nt,
@@ -25,10 +26,10 @@ def run_experiment(
     regime = wrapped_regime(static, signal_param)
     if loss_param is None:
         def loss_fn(dyn, key):
-            return loss_function(dyn, static,  n, t0, tf, nt, ndt, noise, key, regime, get_states)
+            return loss_function(dyn, static,  n, cell_noise, t0, tf, nt, ndt, noise, key, regime, get_states)
     else:
         def loss_fn(dyn, key):
-            return loss_function(dyn, static, n, t0, tf, nt, ndt, noise, key, regime, get_states, loss_param)
+            return loss_function(dyn, static, n, cell_noise, t0, tf, nt, ndt, noise, key, regime, get_states, loss_param)
 
     step_fn = make_step(loss_fn, η, clip_dynamic)
 

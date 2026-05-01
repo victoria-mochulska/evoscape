@@ -12,14 +12,14 @@ def clip_dynamic(dynamic):
 
         name = getattr(key, "name", None)
 
-        # if name == "a":
-        #     return jnp.clip(x, 2, 2)
+        if name == "a":
+            return jnp.clip(x, 0.5, 20)
         if name == "s":
             return jnp.clip(x, 1, 5)
-        # if name == "x":
-        #     return jnp.clip(x, -5, 5)
-        # if name == "y":
-        #     return jnp.clip(x, -5, 5)
+        if name == "x":
+            return jnp.clip(x, -10, 10)
+        if name == "y":
+            return jnp.clip(x, -10, 10)
         # if name == "init_cond":
         #     return jnp.clip(x, 2, 2)
         return x 
