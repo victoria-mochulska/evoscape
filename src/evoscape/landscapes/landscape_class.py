@@ -3,6 +3,7 @@ import random
 from copy import deepcopy
 
 from .. import mr_sigmoid
+from .landscape_phase_analysis import LandscapePhaseAnalysisBase
 from evoscape.modules.module_class import Node, UnstableNode, Center, NegCenter
 
 def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
@@ -31,7 +32,7 @@ def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
         return derivs, pot, pot_rot
     return derivs
 
-class Landscape:
+class Landscape(LandscapePhaseAnalysisBase):
     def __init__(self, module_list=(), A0=0., init_cond=(0., 1.), regime=mr_sigmoid, n_regimes=2,
                  morphogen_times=(0.,), used_fp_types=(Node,), immutable_pars_list=(), x0=(0., 0.)):
         """
@@ -47,10 +48,13 @@ class Landscape:
         self.module_list = []
         # modules are stored in module_list
         for ind in range(len(module_list)):
-            self.module_list.append(deepcopy(module_list[ind]))
+            module_copy = deepcopy(module_list[ind])
+            setattr(module_copy, "at_init", True)
+            self.module_list.append(module_copy)
             for par_name in immutable_pars_list:
                 if par_name in self.module_list[ind].mutable_parameters_list:
                     self.module_list[ind].remove_mutable_parameter(par_name)
+        self._normalize_module_list_order()
         self.A0 = A0
         self.x0 = x0
         self.regime = regime
@@ -77,6 +81,189 @@ class Landscape:
             repr_str += '\n' + module_str + ','
         repr_str = repr_str[:-1]
         return repr_str
+
+    @property
+    def n_nodes(self):
+        return sum(isinstance(module, Node) for module in self.module_list)
+
+    @property
+    def node_modules(self):
+        return self.module_list[:self.n_nodes]
+
+    def _normalize_module_list_order(self):
+        node_modules = [module for module in self.module_list if isinstance(module, Node)]
+        other_modules = [module for module in self.module_list if not isinstance(module, Node)]
+        self.module_list = node_modules + other_modules
+
+    def _shuffle_node_modules(self):
+        node_modules = list(self.node_modules)
+        random.shuffle(node_modules)
+        self.module_list = node_modules + self.module_list[self.n_nodes:]
+
+    def _deletable_module_indices(self):
+        return [
+            index
+            for index, module in enumerate(self.module_list)
+            if not getattr(module, "at_init", False)
+        ]
+
+    @staticmethod
+    def _coerce_coordinate_array(coordinate):
+        coordinate = np.asarray(coordinate, dtype=float)
+        if coordinate.ndim == 1:
+            if coordinate.shape != (2,):
+                raise ValueError("coordinate must have shape (2,) or (2, n)")
+            coordinate = coordinate.reshape(2, 1)
+        if coordinate.ndim != 2 or coordinate.shape[0] != 2:
+            raise ValueError("coordinate must have shape (2, n)")
+        return coordinate
+
+    def _node_state_distance_matrix(self, coordinate):
+        coordinate = self._coerce_coordinate_array(coordinate)
+        if self.n_nodes == 0:
+            return np.empty((coordinate.shape[1], 0), dtype=float)
+        node_coords = np.array([(module.x, module.y) for module in self.node_modules], dtype=float)
+        deltas = coordinate.T[:, None, :] - node_coords[None, :, :]
+        return np.linalg.norm(deltas, axis=2)
+
+    def _map_attractors_to_nodes(self, attractors, basin_labels=None, x_coords=None, y_coords=None):
+        if self.n_nodes == 0:
+            return {}
+
+        node_coords = np.array([(module.x, module.y) for module in self.node_modules], dtype=float)
+        attractor_order = []
+        attractor_anchors = {}
+        for attractor in attractors:
+            attractor_type = attractor.get("type")
+            if attractor_type == "fixed_point":
+                anchor = np.asarray(attractor["point"], dtype=float)
+            elif attractor_type == "cycle":
+                anchor = np.asarray(attractor["center"], dtype=float)
+            else:
+                continue
+            attractor_id = int(attractor["id"])
+            attractor_order.append(attractor_id)
+            attractor_anchors[attractor_id] = anchor
+
+        attractor_node_states = {}
+
+        if basin_labels is not None and x_coords is not None and y_coords is not None and attractor_order:
+            x_coords = np.asarray(x_coords, dtype=float)
+            y_coords = np.asarray(y_coords, dtype=float)
+            basin_labels = np.asarray(basin_labels, dtype=int)
+            sampled_labels = np.full(self.n_nodes, -1, dtype=int)
+
+            for node_state, (x_node, y_node) in enumerate(node_coords):
+                if (
+                    x_node < x_coords[0]
+                    or x_node > x_coords[-1]
+                    or y_node < y_coords[0]
+                    or y_node > y_coords[-1]
+                ):
+                    continue
+                if x_coords.size > 1:
+                    ix = int(np.rint((x_node - x_coords[0]) / (x_coords[1] - x_coords[0])))
+                else:
+                    ix = 0
+                if y_coords.size > 1:
+                    iy = int(np.rint((y_node - y_coords[0]) / (y_coords[1] - y_coords[0])))
+                else:
+                    iy = 0
+                if 0 <= ix < basin_labels.shape[1] and 0 <= iy < basin_labels.shape[0]:
+                    sampled_labels[node_state] = int(basin_labels[iy, ix])
+
+            for attractor_id in attractor_order:
+                owner_nodes = np.flatnonzero(sampled_labels == attractor_id)
+                if owner_nodes.size == 0:
+                    continue
+                if owner_nodes.size == 1:
+                    node_state = int(owner_nodes[0])
+                else:
+                    anchor = attractor_anchors[attractor_id]
+                    distances = np.linalg.norm(node_coords[owner_nodes] - anchor[None, :], axis=1)
+                    node_state = int(owner_nodes[int(np.argmin(distances))])
+                attractor_node_states[attractor_id] = node_state
+            return attractor_node_states
+
+        for attractor_id in attractor_order:
+            anchor = attractor_anchors[attractor_id]
+            distances = np.linalg.norm(node_coords - anchor[None, :], axis=1)
+            attractor_node_states[attractor_id] = int(np.argmin(distances))
+
+        return attractor_node_states
+
+    def _auto_basin_ranges(self, coordinate):
+        coordinate = self._coerce_coordinate_array(coordinate)
+        if self.module_list:
+            module_coords = np.array([(module.x, module.y) for module in self.module_list], dtype=float).T
+            all_coords = np.concatenate((coordinate, module_coords), axis=1)
+        else:
+            all_coords = coordinate
+
+        x_min = float(np.min(all_coords[0]))
+        x_max = float(np.max(all_coords[0]))
+        y_min = float(np.min(all_coords[1]))
+        y_max = float(np.max(all_coords[1]))
+        span = max(x_max - x_min, y_max - y_min, 1.0)
+        pad = max(0.5, 0.15 * span)
+        return (x_min - pad, x_max + pad), (y_min - pad, y_max + pad)
+
+    def _build_basin_state_grid(self, t, coordinate, grid_points=201):
+        coordinate = self._coerce_coordinate_array(coordinate)
+        x_range, y_range = self._auto_basin_ranges(coordinate)
+        x_coords = np.linspace(*x_range, int(grid_points))
+        y_coords = np.linspace(*y_range, int(grid_points))
+        xx, yy = np.meshgrid(x_coords, y_coords, indexing='xy')
+
+        fixed_points = self.find_fixed_points(t, x_range, y_range)
+        saddle_manifolds = self.find_saddle_manifolds(
+            t,
+            fixed_points=fixed_points,
+            x_range=x_range,
+            y_range=y_range,
+        )
+        basin_result = self.find_attractor_basins_manifold(
+            t,
+            xx,
+            yy,
+            fixed_points=fixed_points,
+            saddle_manifolds=saddle_manifolds,
+        )
+
+        labels = np.asarray(basin_result["labels"], dtype=int)
+        attractor_node_states = self._map_attractors_to_nodes(
+            basin_result["attractors"],
+            basin_labels=labels,
+            x_coords=x_coords,
+            y_coords=y_coords,
+        )
+        basin_states = np.full(xx.shape, -1, dtype=int)
+        for attractor_id, node_state in attractor_node_states.items():
+            basin_states[labels == attractor_id] = node_state
+
+        return x_coords, y_coords, basin_states
+
+    @staticmethod
+    def _sample_regular_grid(x_grid, y_grid, grid_values, coordinate):
+        coordinate = Landscape._coerce_coordinate_array(coordinate)
+        if grid_values.size == 0:
+            return np.full(coordinate.shape[1], -1, dtype=int)
+
+        if x_grid.size > 1:
+            dx = float(x_grid[1] - x_grid[0])
+            ix = np.rint((coordinate[0] - x_grid[0]) / dx).astype(int)
+        else:
+            ix = np.zeros(coordinate.shape[1], dtype=int)
+
+        if y_grid.size > 1:
+            dy = float(y_grid[1] - y_grid[0])
+            iy = np.rint((coordinate[1] - y_grid[0]) / dy).astype(int)
+        else:
+            iy = np.zeros(coordinate.shape[1], dtype=int)
+
+        ix = np.clip(ix, 0, len(x_grid) - 1)
+        iy = np.clip(iy, 0, len(y_grid) - 1)
+        return np.asarray(grid_values[iy, ix], dtype=int)
 
 # ______________________________________________________________________________________________________________________
 # ______________________________ Landscape dynamics calculation ________________________________________________________
@@ -190,11 +377,15 @@ class Landscape:
 
     def add_module(self, M):
         """ Add a module to the landscape """
-        self.module_list.append(deepcopy(M))
+        module_copy = deepcopy(M)
+        setattr(module_copy, "at_init", False)
+        self.module_list.append(module_copy)
+        self._normalize_module_list_order()
 
     def del_module(self, del_ind):
         """ Remove the module at index del_ind from the landscape """
         del self.module_list[del_ind]
+        self._normalize_module_list_order()
 
     def mutate(self, par_limits, par_choice_values, prob_pars, fitness_pars):
         """
@@ -241,12 +432,13 @@ class Landscape:
             self.add_module(fp_type.generate(par_limits, par_choice_values, n_regimes=self.n_regimes))
         elif r < prob_pars['prob_add'] + prob_pars['prob_drop'] and len(self.module_list) > self.min_n_modules \
                 or len(self.module_list) > self.max_n_modules:
-            # del_ind = np.random.choice(len(self.module_list))
-            del_ind = np.random.randint(self.min_n_modules, len(self.module_list))
-            self.del_module(del_ind)
+            deletable_indices = self._deletable_module_indices()
+            if deletable_indices:
+                del_ind = int(np.random.choice(deletable_indices))
+                self.del_module(del_ind)
         elif r < prob_pars['prob_add'] + prob_pars['prob_drop'] + prob_pars['prob_shuffle'] and len(
                 self.module_list) > 1:
-            random.shuffle(self.module_list)
+            self._shuffle_node_modules()
         else:
             mod_ind = np.random.choice(len(self.module_list))
             self.module_list[mod_ind].mutate(par_limits, par_choice_values)
@@ -260,15 +452,19 @@ class Landscape:
         """
         Initialize cells in the landscape with a given initial condition.
         :param n: int, number of cells
-        :param init_cond: int or array/tuple of length 2 or array of shape (2, n) or array of length self.module_list.
-            Int: module number, all cells are initialized at the module location.
+        :param init_cond: int or array/tuple of length 2 or array of shape (2, n) or array of length self.n_nodes.
+            Int: Node state number, all cells are initialized at the Node location.
             Tuple: (x,y) - same coordinate for all cells.
             Array (2, n) - x and y coordinates for n cells.
-            Array (len(self.module_list)) - number of cells starting at each module, numbers must sum to n.
+            Array (self.n_nodes) - number of cells starting at each Node, numbers must sum to n.
         :param noise: amplitude of gaussian noise added to each cell's initial coordinate.
         """
-        if isinstance(init_cond, int):
-            module0 = self.module_list[init_cond]
+        if isinstance(init_cond, (int, np.integer)):
+            if self.n_nodes == 0:
+                raise ValueError("init_cells(int) requires at least one Node module.")
+            if int(init_cond) < 0 or int(init_cond) >= self.n_nodes:
+                raise ValueError(f"Node init_cond must be between 0 and {self.n_nodes - 1}.")
+            module0 = self.module_list[int(init_cond)]
             init_cond = (module0.x, module0.y)
         elif init_cond is None:
             init_cond = self.init_cond
@@ -278,12 +474,13 @@ class Landscape:
             self.cell_coordinates = init_cond.astype('float')
         elif init_cond.shape == (2,):
             self.cell_coordinates = np.tile(init_cond.astype('float'), (n, 1)).T
-        elif len(init_cond) == len(self.module_list) and np.sum(init_cond) == n:
-            module_locs = np.array([(module.x, module.y) for module in self.module_list])
+        elif init_cond.ndim == 1 and len(init_cond) == self.n_nodes and np.sum(init_cond) == n:
+            if self.n_nodes == 0:
+                raise ValueError("init_cells(counts) requires at least one Node module.")
+            module_locs = np.array([(module.x, module.y) for module in self.node_modules])
             self.cell_coordinates = np.repeat(module_locs, init_cond, axis=0).T
         else:
-            print('Wrong shape of init_cond input')
-            self.cell_coordinates = np.ones((2, n)) * np.nan
+            raise ValueError('Wrong shape of init_cond input')
 
         if noise != 0.:
             self.cell_coordinates += noise * np.random.randn(2, n)
@@ -309,49 +506,96 @@ class Landscape:
         """
         if coordinate is None:
             coordinate = self.cell_coordinates
-        # TODO: take into account only node modules
-        dist = np.empty((coordinate.shape[1], len(self.module_list)))
-        for i, module in enumerate(self.module_list):
-            dist[:, i] = np.linalg.norm(coordinate.T - np.array((module.x, module.y)), axis=1)
-        states = np.argmin(dist, axis=1)
+        coordinate = self._coerce_coordinate_array(coordinate)
+        if self.n_nodes == 0:
+            return np.full(coordinate.shape[1], -1, dtype=int)
+        dist = self._node_state_distance_matrix(coordinate)
+        return np.argmin(dist, axis=1).astype(int)
 
-        return states
-
-    def get_cell_states(self, t, coordinate=None, measure='gaussian', prob_threshold=0., abs_threshold=0.):
+    def get_cell_states(
+        self,
+        t,
+        coordinate=None,
+        measure='gaussian',
+        prob_threshold=0.,
+        abs_threshold=0.,
+        t_freeze=None,
+        basin_grid=None,
+    ):
         """
         Return cell states given cell coordinates. Assignent based on a chosen distance measure, can depend on time or signals.
         :param t: float, timepoint
         :param coordinate: array of shape (2, n) where n is the number of cells
             (optional, can use the current coordinates stored in landscape)
-        :param measure: 'dist' - base on Euclidean distance to modules, same as get_cell_states_static.
-            'gaussian' - based on a gaussian mixture model, taking into account time-dependent module size.
+        :param measure: 'dist' - based on Euclidean distance to Node modules.
+            'gaussian' - based on a gaussian mixture model over Node modules, taking into account time-dependent module size.
+            'basin' - based on the current basin of attraction, looked up on an auto-generated rasterized grid.
+            'basin static' - based on a basin grid computed at t_freeze and sampled for the current coordinates.
         :return: states - array of length n of ints
         """
         if coordinate is None:
             coordinate = self.cell_coordinates
+        coordinate = self._coerce_coordinate_array(coordinate)
+        if self.n_nodes == 0:
+            return np.full(coordinate.shape[1], -1, dtype=int)
+        if measure not in ('dist', 'gaussian', 'basin', 'basin static', 'basin_static'):
+            raise ValueError("measure must be one of 'dist', 'gaussian', 'basin', 'basin static', or 'basin_static'")
         states = None
 
         if measure == 'dist':
-            dist = np.empty((coordinate.shape[1], len(self.module_list)))
-            for i, module in enumerate(self.module_list):
-                dist[:, i] = np.linalg.norm(coordinate.T - np.array((module.x, module.y)), axis=1)
+            dist = self._node_state_distance_matrix(coordinate)
             states = np.argmin(dist, axis=1)
         elif measure == 'gaussian':
-            prob = np.zeros((coordinate.shape[1], len(self.module_list) + 1))
-            for i, module in enumerate(self.module_list):
+            prob = np.zeros((coordinate.shape[1], self.n_nodes + 1), dtype=float)
+            for i, module in enumerate(self.node_modules):
                 V, st, at = module.get_current_pars(t, self.regime, *self.morphogen_times)
+                del V
                 if st == 0 or at == 0:
                     prob[:, i] = 0.
                 else:
                     prob[:, i] = np.exp(
                         -np.sum((coordinate.T - np.array((module.x, module.y))) ** 2, axis=1) / 2. / st ** 2) / st ** 2
-            prob[:, -1] = abs_threshold  # below this value cells will be assigned as 'unclustered'
-            prob = (prob.T / np.sum(prob, axis=1)).T
-            if abs_threshold == 0:
-                prob[:, -1] = prob_threshold  # probability threshold: below this value cells will be assigned as 'unclustered'
-            # print(prob*100)
+            if abs_threshold != 0:
+                prob[:, -1] = abs_threshold
+                row_sums = np.sum(prob, axis=1, keepdims=True)
+                zero_rows = row_sums[:, 0] <= 0
+                prob[zero_rows, -1] = 1.0
+                row_sums[zero_rows] = 1.0
+                prob = prob / row_sums
+            else:
+                row_sums = np.sum(prob[:, :-1], axis=1, keepdims=True)
+                zero_rows = row_sums[:, 0] <= 0
+                row_sums[zero_rows] = 1.0
+                prob[:, :-1] = prob[:, :-1] / row_sums
+                prob[:, -1] = prob_threshold
             states = np.argmax(prob, axis=1)
-            states[states == len(self.module_list)] = -1
+            states[states == self.n_nodes] = -1
+            if abs_threshold == 0:
+                states[zero_rows] = -1
+        elif measure == 'basin':
+            if basin_grid is None:
+                basin_grid = self._build_basin_state_grid(t, coordinate)
+            x_coords, y_coords, basin_states = basin_grid
+            states = self._sample_regular_grid(
+                np.asarray(x_coords, dtype=float),
+                np.asarray(y_coords, dtype=float),
+                np.asarray(basin_states, dtype=int),
+                coordinate,
+            )
+        elif measure == 'basin static' or measure == 'basin_static':
+            if basin_grid is None:
+                if t_freeze is None:
+                    raise ValueError("measure 'basin static' requires t_freeze or a precomputed basin_grid.")
+                basin_grid = self._build_basin_state_grid(t_freeze, coordinate)
+            x_coords, y_coords, basin_states = basin_grid
+            states = self._sample_regular_grid(
+                np.asarray(x_coords, dtype=float),
+                np.asarray(y_coords, dtype=float),
+                np.asarray(basin_states, dtype=int),
+                coordinate,
+            )
+        else:
+            raise ValueError("measure must be one of 'dist', 'gaussian', 'basin', 'basin static', or 'basin_static'")
         return states
 
     def run_cells(self, t0, tf, nt, noise=0., ndt=50, frozen=False, t_freeze=None, get_states=True):
@@ -364,6 +608,7 @@ class Landscape:
         :param ndt: int, number of integration steps per timepoint
         :param frozen: bool, whether to fix the landscape paremeters
         :param t_freeze: if frozen, provide the time at which to calculate the landscape, to be kept constant
+        :param get_states: bool or str, whether to compute cell states, or which state measure to use
         :return: traj (array of shape (2, n, nt)) and states (int array of shape (2, nt))
         """
         traj = np.empty((*self.cell_coordinates.shape, nt), dtype='float')
@@ -375,9 +620,34 @@ class Landscape:
         sqrt_dt = np.sqrt(dt)
 
         if get_states:
+            state_measure = 'gaussian' if get_states is True else get_states
+            if state_measure not in ('dist', 'gaussian', 'basin', 'basin static', 'basin_static'):
+                raise ValueError(
+                    "get_states must be True, False, or one of 'dist', 'gaussian', 'basin', 'basin static', 'basin_static'"
+                )
+            if (state_measure == 'basin static' or state_measure == 'basin_static') and t_freeze is None:
+                raise ValueError("get_states='basin static' requires t_freeze to be provided.")
+            state_basin_grid = (
+                self._build_basin_state_grid(t_freeze, y)
+                if state_measure == 'basin static' or state_measure == 'basin_static'
+                else None
+            )
+            state_time = (
+                t_freeze
+                if state_measure == 'basin static' or state_measure == 'basin_static'
+                else (t_freeze if frozen and t_freeze is not None else t)
+            )
             states = np.empty((self.cell_coordinates.shape[1], nt), dtype='int')
-            states[:, 0] = self.get_cell_states(t)
+            states[:, 0] = self.get_cell_states(
+                state_time,
+                coordinate=y,
+                measure=state_measure,
+                t_freeze=t_freeze,
+                basin_grid=state_basin_grid,
+            )
         else:
+            state_measure = None
+            state_basin_grid = None
             states = None
 
         if frozen:
@@ -391,10 +661,20 @@ class Landscape:
                 t += dt
             traj[:, :, Delta_step] = y
             if get_states:
-                states[:, Delta_step] = self.get_cell_states(t)
+                state_time = (
+                    t_freeze
+                    if state_measure == 'basin static' or state_measure == 'basin_static'
+                    else (t_freeze if frozen and t_freeze is not None else t)
+                )
+                states[:, Delta_step] = self.get_cell_states(
+                    state_time,
+                    coordinate=y,
+                    measure=state_measure,
+                    t_freeze=t_freeze,
+                    basin_grid=state_basin_grid,
+                )
         if get_states:
             self.cell_states = states[:, -1]
         return traj, states
 
 # ______________________________________________________________________________________________________________________
-
