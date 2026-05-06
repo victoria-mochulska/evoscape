@@ -154,7 +154,7 @@ class Experiment:
     # OPTIMIZATION
     # ------------------------------------------------------------------
 
-    def optimize(self, user_fitness: Callable, steps: int, lr: float = 0.05, seed: int = 42):
+    def optimize(self, user_fitness: Callable, fitness_params = None, steps: int = 50, lr: float = 0.05, seed: int = 42):
         key = jrnd.PRNGKey(seed)
 
         p = self.sim_params
@@ -183,7 +183,7 @@ class Experiment:
                 self.regime,
                 self.get_cell_states,
             )
-            return user_fitness(traj, states)
+            return user_fitness(traj, states, dynamic, fitness_params)
 
         step_fn = make_step(loss_fn, lr, clip_dynamic)
         (self.dynamic, key), fitness_vals = run_optimization(
