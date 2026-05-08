@@ -37,11 +37,44 @@ evoscape/
 - notebooks/: Jupyter notebooks used for analysis and figures
 </pre>
 
+### Getting started
+Check out `examples` notebooks
 
-## 🚧 In development 
-* Tutorials
+
+### 🚧 In development
 * Interactive simulation
 
-### References 
-Scientific colormaps: Crameri, F. (2018), Scientific colour maps, doi:10.5281/
+## 📃 Related publication
+
+ V. Mochulska, P. François (2025). **Generative epigenetic landscapes map the topology and
+topography of cell fates**. PNAS [Paper link](https://www.pnas.org/doi/10.1073/pnas.2514508122) |
+[bioRxiv link](https://www.biorxiv.org/content/10.1101/2025.06.09.658705v2)
+
+<details>
+<summary>Citation</summary>
+
+```bibtex
+@article{
+doi:10.1073/pnas.2514508122,
+author = {Victoria Mochulska  and Paul François },
+title = {Generative epigenetic landscapes map the topology and topography of cell fates},
+journal = {Proceedings of the National Academy of Sciences},
+volume = {122},
+number = {50},
+pages = {e2514508122},
+year = {2025},
+doi = {10.1073/pnas.2514508122},
+URL = {https://www.pnas.org/doi/abs/10.1073/pnas.2514508122},
+eprint = {https://www.pnas.org/doi/pdf/10.1073/pnas.2514508122}
+}
+```
+</details>
+
+## References
+
+**Scientific colormaps**: Crameri, F. (2018), Scientific colour maps, doi:10.5281/
 zenodo.1243862
+
+## Contact
+
+`victoria dot mochulska at mail dot mcgill dot ca` 
