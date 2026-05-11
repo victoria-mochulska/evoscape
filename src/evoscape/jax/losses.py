@@ -36,3 +36,4 @@ def biseparating_fitness(traj, states, dynamic: LandscapeDynamic, loss_params=No
         + 0.0 * lam
         + 0.0 * jnp.sum(entr(P))
     )
+
