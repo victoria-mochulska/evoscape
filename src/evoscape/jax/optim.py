@@ -47,7 +47,7 @@ def make_step(loss_fn, lr, clip_fn):
 
         dynamic = clip_fn(dynamic)
 
-        return (dynamic, key), loss
+        return (dynamic, key), (loss, dynamic)
 
     return step
 
@@ -55,10 +55,10 @@ def make_step(loss_fn, lr, clip_fn):
 # Training function
 @partial(jit, static_argnames=("step_fn", "iterations"))
 def run_optimization(dynamic, key, step_fn, iterations):
-    (dynamic, key), losses = scan(
+    (dynamic, key), (losses, dynamics) = scan(
         step_fn,
         (dynamic, key),
         None,
         length=iterations
     )
-    return (dynamic, key), losses
+    return (dynamic, key), losses, dynamics

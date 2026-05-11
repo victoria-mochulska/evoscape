@@ -33,8 +33,8 @@ def landscape_to_pytree(landscape):
         for module in landscape.module_list:
             x.append(module.x)
             y.append(module.y)
-            a.append(np.atleast_1d(module.a))
-            s.append(np.atleast_1d(module.s))
+            a.append(module.a)
+            s.append(module.s)
             J_list.append(module.J)
 
             if module.tau is None:
