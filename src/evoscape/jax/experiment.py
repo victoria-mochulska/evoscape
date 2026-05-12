@@ -1,12 +1,15 @@
 from typing import Any, Callable, Dict
+import numpy as np
+
 from jax.tree_util import tree_map
 import jax.numpy as jnp
-import jax.random as jrnd
-import numpy as np
+import jax.random as jrd
+from jax import value_and_grad
+import optax
 
 from .converters import landscape_to_pytree, pytree_to_landscape
 from .dynamics import _integrate, state_probs
-from .optim import make_step, clip_dynamic, run_optimization
+from .optim import make_step, clip_dynamic, run_optimization, run_optimization_optax
 from .regimes import wrapped_regime
 
 
@@ -84,7 +87,7 @@ class Experiment:
         )
 
     def get_trajectory(self, seed=42):
-        key = jrnd.PRNGKey(seed)
+        key = jrd.PRNGKey(seed)
 
         p = self.sim_params
 
@@ -121,8 +124,8 @@ class Experiment:
     # OPTIMIZATION
     # ------------------------------------------------------------------
 
-    def optimize(self, user_fitness: Callable, fitness_params = None, steps: int = 50, lr: float = 0.05, seed: int = 42):
-        key = jrnd.PRNGKey(seed)
+    def optimize(self, user_fitness: Callable, fitness_params = None, optimizer=optax.adam, steps: int = 50, lr: float = 0.05, seed: int = 42):
+        key = jrd.PRNGKey(seed)
 
         p = self.sim_params
 
@@ -152,13 +155,10 @@ class Experiment:
             )
             return user_fitness(traj, states, dynamic, fitness_params)
 
-        step_fn = make_step(loss_fn, lr, clip_dynamic)
-        (self.dynamic, key), fitness_vals, dynamic_vals = run_optimization(
-            self.dynamic,
-            key,
-            step_fn,
-            steps,
-        )
+
+        dynamic_vals, fitness_vals = run_optimization_optax(self.dynamic, key, steps, loss_fn, optimizer, lr)
+        self.dynamic = dynamic_vals[-1]
+
 
         _, traj, states = _integrate(
             key,
@@ -177,8 +177,7 @@ class Experiment:
         self.trajectories = traj
         self.states = states
         self.fitness_vals = fitness_vals
-        self.dynamic_vals = [
-            tree_map(lambda x: x[t], dynamic_vals)
-            for t in range(len(dynamic_vals[0]))
-            ]
+        ## self.dynamic_vals = [ tree_map(lambda x: x[t], dynamic_vals) for t in range(len(dynamic_vals[0])) ]
+        self.dynamic_vals = dynamic_vals
+
         return fitness_vals
