@@ -7,6 +7,7 @@ import jax.tree_util as jtu
 from jax import value_and_grad, jit
 from jax.lax import scan
 
+import optax
 
 # Clipping function for non negative value allowed. Clipping values should be chosen wisely
 def clip_dynamic(dynamic):
@@ -51,7 +52,6 @@ def make_step(loss_fn, lr, clip_fn):
 
     return step
 
-
 # Training function
 @partial(jit, static_argnames=("step_fn", "iterations"))
 def run_optimization(dynamic, key, step_fn, iterations):
@@ -62,3 +62,30 @@ def run_optimization(dynamic, key, step_fn, iterations):
         length=iterations
     )
     return (dynamic, key), losses
+
+
+def run_optimization_optax(dynamic, key, steps, loss_fn, optimizer, lr):
+    optimizer = optimizer(lr)
+    opt_state = optimizer.init(dynamic)
+    fitness_vals = []
+    dynamic_vals = []
+
+    value_and_grad_fn = jit(value_and_grad(loss_fn))
+
+    for step in range(steps):
+        # one optimizer step
+        key, subkey = jrd.split(key)
+
+        loss, grads = value_and_grad_fn(dynamic, subkey)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        dynamic = optax.apply_updates(dynamic, updates)
+
+        # saving losses and current landscape
+        fitness_vals.append(loss)
+        dynamic_vals.append(dynamic)
+
+        if step%5 == 0:
+            print(f"Train step {step} : Loss = {loss}")
+        
+    return dynamic_vals, fitness_vals
+        
