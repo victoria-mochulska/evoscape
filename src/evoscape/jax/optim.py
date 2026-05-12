@@ -64,8 +64,7 @@ def run_optimization(dynamic, key, step_fn, iterations):
     return (dynamic, key), losses, dynamics
 
 
-def run_optimization_optax(dynamic, key, steps, loss_fn, optimizer, lr):
-    optimizer = optimizer(lr)
+def run_optimization_optax(dynamic, key, steps, loss_fn, optimizer):
     opt_state = optimizer.init(dynamic)
     fitness_vals = []
     dynamic_vals = []

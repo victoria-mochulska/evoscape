@@ -124,7 +124,7 @@ class Experiment:
     # OPTIMIZATION
     # ------------------------------------------------------------------
 
-    def optimize(self, user_fitness: Callable, fitness_params = None, optimizer=optax.adam, steps: int = 50, lr: float = 0.05, seed: int = 42):
+    def optimize(self, user_fitness: Callable, fitness_params = None, steps: int = 50, optimizer=optax.adam(0.1), seed: int = 42):
         key = jrd.PRNGKey(seed)
 
         p = self.sim_params
@@ -156,7 +156,7 @@ class Experiment:
             return user_fitness(traj, states, dynamic, fitness_params)
 
 
-        dynamic_vals, fitness_vals = run_optimization_optax(self.dynamic, key, steps, loss_fn, optimizer, lr)
+        dynamic_vals, fitness_vals = run_optimization_optax(self.dynamic, key, steps, loss_fn, optimizer)
         self.dynamic = dynamic_vals[-1]
 
 
