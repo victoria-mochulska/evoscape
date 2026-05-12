@@ -27,9 +27,9 @@ class LandscapeStatic(NamedTuple):
     n_regimes: int
     regime_id: int #the number associated with the regime
     morphogen_times: jnp.ndarray
+    init_cond: jnp.ndarray
     module: ModuleStatic
 
 
 class LandscapeDynamic(NamedTuple):
-    init_cond: jnp.ndarray
     module: ModuleDynamic

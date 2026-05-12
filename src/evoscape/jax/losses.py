@@ -16,7 +16,7 @@ def origin_leading_fitness(traj, states, dynamic: LandscapeDynamic, loss_params=
 
 
 def biseparating_fitness(traj, states, dynamic: LandscapeDynamic, loss_params=None):
-    temperature, lam, q_prob = loss_params
+    temperature, mu, lam, q_prob = loss_params
 
     final_coord = traj[:, :, -1]
     module_coord = jnp.stack((dynamic.module.x, dynamic.module.y))
@@ -28,12 +28,16 @@ def biseparating_fitness(traj, states, dynamic: LandscapeDynamic, loss_params=No
     p_prob = jnp.mean(P, axis=0)
 
     loss_uniform = jnp.mean(
-        kl_div(p_prob, jnp.array(q_prob)) + kl_div(jnp.array(q_prob), p_prob)
+        kl_div(p_prob, jnp.array(q_prob))
+    )
+
+    uniform = jnp.ones_like(P) / P.shape[1]
+
+    loss_particle = -jnp.mean(
+    jnp.sum(kl_div(P, uniform), axis=1)
     )
 
     return (
-        loss_uniform
-        + 0.0 * lam
-        + 0.0 * jnp.sum(entr(P))
+        mu * loss_uniform + lam* loss_particle
     )
 

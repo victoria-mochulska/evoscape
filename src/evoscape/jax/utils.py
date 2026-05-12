@@ -9,7 +9,7 @@ from evoscape.jax.converters import pytree_to_landscape
 # Initialization function used in the fitness function, we let the model choose where the cells should start in optimization
 def init_cell(key,n,init_cond,noise):                    
     key,subkey = jrd.split(key)
-    return  key,init_cond[:,None]+noise*jrd.normal(subkey, shape=(2, n))
+    return  key,init_cond+noise*jrd.normal(subkey, shape=(2, n))
 
 
 def make_movie_landscape(dynamics, static,xx, yy, n_frames):
@@ -24,4 +24,4 @@ def make_movie_landscape(dynamics, static,xx, yy, n_frames):
         fig.savefig(buf, format='png')
         buf.seek(0)
         frames.append(imageio.imread(buf))
-    imageio.mimsave("animation.gif", frames, duration=10.)
+    imageio.mimsave("../figures/animation.gif", frames, duration=10.)
