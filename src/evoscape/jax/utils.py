@@ -1,4 +1,5 @@
 import jax.random as jrd
+import jax.numpy as jnp
 import imageio.v2 as imageio
 import matplotlib.pyplot as plt
 import io
@@ -11,8 +12,16 @@ def init_cell(key,n,init_cond,noise):
     key,subkey = jrd.split(key)
     return  key,init_cond[:,None]+noise*jrd.normal(subkey, shape=(2, n))
 
+def init_cell_circle(n, center, r):
+    angles = jnp.linspace(0, 2*jnp.pi, n)
 
-def make_movie_landscape(dynamics, static,xx, yy, n_frames):
+    x = jnp.cos(angles)*r + center[0]
+    y = jnp.sin(angles)*r + center[1]
+
+    return jnp.stack([x,y])
+
+
+def make_movie_landscape(dynamics, static, xx, yy, n_frames):
     frames = []
     indices = np.linspace(0, len(dynamics)-1, n_frames, dtype=int)
     selected = [dynamics[i] for i in indices]
