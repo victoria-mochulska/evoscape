@@ -45,17 +45,17 @@ from .landscape_visuals_config import (
 plt.rcParams.update({'figure.dpi': figure_dpi})  # Change to 200 for high res figures, 100 for normal
 
 
-def sync_order_colors_from_config():
-    global order_colors, pastel_order_colors, cmap_state, norm_state
-    order_colors = visuals_config.order_colors
-    pastel_order_colors = visuals_config.pastel_order_colors
-    cmap_state = visuals_config.cmap_state
-    norm_state = visuals_config.norm_state
+# def sync_order_colors_from_config():
+#     global order_colors, pastel_order_colors, cmap_state, norm_state
+#     order_colors = visuals_config.order_colors
+#     pastel_order_colors = visuals_config.pastel_order_colors
+#     cmap_state = visuals_config.cmap_state
+#     norm_state = visuals_config.norm_state
 
 
-def set_order_colors(colors, lighten_amount=0.4):
-    visuals_config.set_order_colors(colors, lighten_amount=lighten_amount)
-    sync_order_colors_from_config()
+# def set_order_colors(colors, lighten_amount=0.4):
+#     visuals_config.set_order_colors(colors, lighten_amount=lighten_amount)
+#     sync_order_colors_from_config()
 
 
 def _indexed_cmap_color(cmap, color_index):
@@ -113,6 +113,54 @@ def _ordered_circle_patches(circle_patches):
     ]
 
 
+def _plot_saddle_manifolds_3d(
+    ax,
+    landscape,
+    t,
+    saddle_manifolds,
+    stable_manifold_color=stable_manifold_color,
+    unstable_manifold_color=unstable_manifold_color,
+    rot=False,
+    z_lift=0.0,
+):
+    if saddle_manifolds is None:
+        return
+
+    def surface_values(x_coords, y_coords):
+        _, potential_values, rot_potential = landscape(t, (x_coords, y_coords), return_potentials=True)
+        return np.asarray(rot_potential if rot else potential_values, dtype=float)
+
+    for saddle in saddle_manifolds.get('saddles', ()):
+        # for branch in saddle.get('stable', ()):
+        #     branch = np.asarray(branch, dtype=float)
+        #     if branch.shape[0] >= 2:
+        #         z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
+        #         ax.plot(
+        #             branch[:, 0],
+        #             branch[:, 1],
+        #             z_coords,
+        #             color='steelblue',
+        #             linestyle='-',
+        #             linewidth=2.,
+        #             alpha=1.,
+        #             zorder=100,
+        #         )
+        for branch in saddle.get('unstable', ()):
+            branch = np.asarray(branch, dtype=float)
+            if branch.shape[0] >= 2:
+                z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
+                ax.plot(
+                    branch[:, 0],
+                    branch[:, 1],
+                    z_coords,
+                    color='pink',
+                    linestyle='-',
+                    linewidth=2.,
+                    alpha=1.,
+                    zorder=110,
+                )
+
+
 def _phase_color_data(
     landscape,
     basin_result,
@@ -131,12 +179,16 @@ def _phase_color_data(
         norm = BoundaryNorm(np.arange(-0.5, len(attractors) + 1.5), cmap.N)
         attractor_color_ids = {int(attractor['id']): int(attractor['id']) + 1 for attractor in attractors}
         basin_image = labels + 1
-        return basin_image, cmap, norm, attractor_color_ids
+        attractor_facecolors = {
+            int(attractor['id']): _indexed_cmap_color(cmap, int(attractor['id']) + 1)
+            for attractor in attractors
+        }
+        return basin_image, cmap, norm, attractor_color_ids, attractor_facecolors
 
     if basin_coloring not in ('module', 'node'):
         raise ValueError("basin_coloring must be 'attractor' or 'module'.")
 
-    attractor_module_map = landscape._map_attractors_to_node_states(
+    attractor_module_map = landscape._map_attractors_to_nodes(
         attractors,
         basin_labels=labels,
         x_coords=x_coords,
@@ -145,16 +197,21 @@ def _phase_color_data(
 
     if module_order_colors is None:
         module_palette = pastel_order_colors
+        attractor_palette = _lighten_color_sequence(tuple(order_colors), amount=0.4)
     else:
-        module_palette = _lighten_color_sequence(tuple(module_order_colors), amount=0.4)
+        module_palette = _lighten_color_sequence(tuple(module_order_colors), amount=0.7)
+        attractor_palette = _lighten_color_sequence(tuple(module_order_colors), amount=0.2)
 
     colors = [unresolved_color]
     if len(module_palette) == 0:
         module_palette = (neutral_color,)
+    if len(attractor_palette) == 0:
+        attractor_palette = (neutral_color,)
     for node_state in range(landscape.n_nodes):
         colors.append(module_palette[node_state % len(module_palette)])
 
     attractor_color_ids = {}
+    attractor_facecolors = {}
     no_node_attractors = []
     for attractor in attractors:
         attractor_id = int(attractor['id'])
@@ -163,10 +220,12 @@ def _phase_color_data(
             no_node_attractors.append(attractor_id)
             continue
         attractor_color_ids[attractor_id] = int(module_index) + 1
+        attractor_facecolors[attractor_id] = attractor_palette[int(module_index) % len(attractor_palette)]
 
     for attractor_id in no_node_attractors:
         colors.append(neutral_color)
         attractor_color_ids[attractor_id] = len(colors) - 1
+        attractor_facecolors[attractor_id] = neutral_color
 
     basin_image = np.zeros_like(labels, dtype=int)
     for attractor_id, color_id in attractor_color_ids.items():
@@ -174,7 +233,7 @@ def _phase_color_data(
 
     cmap = ListedColormap(colors)
     norm = BoundaryNorm(np.arange(-0.5, len(colors) + 0.5), cmap.N)
-    return basin_image, cmap, norm, attractor_color_ids
+    return basin_image, cmap, norm, attractor_color_ids, attractor_facecolors
 
 
 def _plot_phase_overlays(
@@ -183,6 +242,7 @@ def _plot_phase_overlays(
     fixed_points,
     cmap,
     attractor_color_ids=None,
+    attractor_facecolors=None,
     saddle_manifolds=None,
     show_saddle_manifolds=False,
     show_cycles=True,
@@ -190,6 +250,8 @@ def _plot_phase_overlays(
     stable_manifold_color=stable_manifold_color,
     unstable_manifold_color=unstable_manifold_color,
 ):
+    if attractor_facecolors is None:
+        attractor_facecolors = {}
     fixed_label_map = {
         attractor.get('fixed_point_index'): attractor['id']
         for attractor in attractors
@@ -255,14 +317,14 @@ def _plot_phase_overlays(
             stability = str(fixed_points['stability'][idx])
             marker = marker_map.get(stability, 'o')
             if idx in fixed_label_map:
-                color = basin_color_for_id(fixed_label_map[idx])
-                facecolor = color
+                attractor_id = fixed_label_map[idx]
+                facecolor = attractor_facecolors.get(attractor_id, basin_color_for_id(attractor_id))
                 edgecolor = outline_color
-                size = 82
+                size = 150 #82
             else:
                 facecolor = unassigned_fixed_point_face_color
                 edgecolor = outline_color
-                size = 72
+                size = 120 # 72
             ax.scatter(
                 point[0],
                 point[1],
@@ -273,122 +335,6 @@ def _plot_phase_overlays(
                 s=size,
                 zorder=8,
             )
-
-
-def _plot_phase_overlays_3d(
-    ax,
-    landscape,
-    t,
-    attractors,
-    fixed_points,
-    cmap,
-    attractor_color_ids=None,
-    saddle_manifolds=None,
-    show_saddle_manifolds=False,
-    show_cycles=True,
-    show_fixed_points=True,
-    stable_manifold_color=stable_manifold_color,
-    unstable_manifold_color=unstable_manifold_color,
-    rot=False,
-    z_lift=0.0,
-):
-    fixed_label_map = {
-        attractor.get('fixed_point_index'): attractor['id']
-        for attractor in attractors
-        if attractor['type'] == 'fixed_point'
-    }
-
-    def basin_color_for_id(attractor_id):
-        if attractor_color_ids is not None and int(attractor_id) in attractor_color_ids:
-            color_index = attractor_color_ids[int(attractor_id)]
-        else:
-            color_index = int(attractor_id) + 1
-        return _indexed_cmap_color(cmap, color_index)
-
-    def surface_values(x_coords, y_coords):
-        _, potential_values, rot_potential = landscape(t, (x_coords, y_coords), return_potentials=True)
-        return np.asarray(rot_potential if rot else potential_values, dtype=float)
-
-    if show_saddle_manifolds and saddle_manifolds is not None:
-        for saddle in saddle_manifolds.get('saddles', ()):
-            for branch in saddle.get('stable', ()):
-                branch = np.asarray(branch, dtype=float)
-                if branch.shape[0] >= 2:
-                    z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
-                    ax.plot(
-                        branch[:, 0],
-                        branch[:, 1],
-                        z_coords,
-                        color=stable_manifold_color,
-                        linestyle='-',
-                        linewidth=2.6,
-                        alpha=0.95,
-                        zorder=5,
-                    )
-            for branch in saddle.get('unstable', ()):
-                branch = np.asarray(branch, dtype=float)
-                if branch.shape[0] >= 2:
-                    z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
-                    ax.plot(
-                        branch[:, 0],
-                        branch[:, 1],
-                        z_coords,
-                        color=unstable_manifold_color,
-                        linestyle='-',
-                        linewidth=2.6,
-                        alpha=0.95,
-                        zorder=5,
-                    )
-
-    if show_cycles:
-        for attractor in attractors:
-            if attractor['type'] != 'cycle':
-                continue
-            color = basin_color_for_id(attractor['id'])
-            h, l, s = colorsys.rgb_to_hls(*np.asarray(color[:3], dtype=float))
-            dark_color = colorsys.hls_to_rgb(
-                h,
-                max(cycle_line_lightness_floor, cycle_line_lightness_scale * l),
-                min(1.0, cycle_line_saturation_scale * s),
-            )
-            traj = np.asarray(attractor['trajectory'])
-            z_coords = surface_values(traj[:, 0], traj[:, 1]) + z_lift
-            ax.plot(traj[:, 0], traj[:, 1], z_coords, color=dark_color, linewidth=2.9, zorder=6)
-
-    if show_fixed_points and fixed_points['points'].size:
-        marker_map = {
-            'attractor': 'o',
-            'repeller': 's',
-            'saddle': 'X',
-            'center_or_degenerate': 'D',
-        }
-        points = np.asarray(fixed_points['points'], dtype=float)
-        z_points = surface_values(points[:, 0], points[:, 1]) + z_lift
-        for idx, point in enumerate(points):
-            stability = str(fixed_points['stability'][idx])
-            marker = marker_map.get(stability, 'o')
-            if idx in fixed_label_map:
-                color = basin_color_for_id(fixed_label_map[idx])
-                facecolor = color
-                edgecolor = outline_color
-                size = 82
-            else:
-                facecolor = unassigned_fixed_point_face_color
-                edgecolor = outline_color
-                size = 72
-            ax.scatter(
-                point[0],
-                point[1],
-                z_points[idx],
-                marker=marker,
-                facecolors=facecolor,
-                edgecolors=edgecolor,
-                linewidths=1.2,
-                s=size,
-                zorder=8,
-                depthshade=False,
-            )
-
 
 def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', draw_circles=True):
     """ Simple visualization of landscape flow and modules in one regime. """
@@ -563,7 +509,7 @@ def plot_attractor_basins_t(
     attractors = basin_result['attractors']
     fixed_points = basin_result['fixed_points']
 
-    basin_image, cmap, norm, attractor_color_ids = _phase_color_data(
+    basin_image, cmap, norm, attractor_color_ids, attractor_facecolors = _phase_color_data(
         landscape,
         basin_result,
         unresolved_color=unresolved_color,
@@ -619,6 +565,7 @@ def plot_attractor_basins_t(
         fixed_points,
         cmap,
         attractor_color_ids=attractor_color_ids,
+        attractor_facecolors=attractor_facecolors,
         saddle_manifolds=saddle_manifolds,
         show_saddle_manifolds=show_saddle_manifolds,
         show_cycles=show_cycles,
@@ -665,7 +612,7 @@ def plot_phase_skeleton_t(
             y_range=(float(np.min(yy)), float(np.max(yy))),
         )
 
-    _, cmap, _, attractor_color_ids = _phase_color_data(
+    _, cmap, _, attractor_color_ids, attractor_facecolors = _phase_color_data(
         landscape,
         basin_result,
         unresolved_color=unresolved_color,
@@ -683,6 +630,7 @@ def plot_phase_skeleton_t(
         fixed_points,
         cmap,
         attractor_color_ids=attractor_color_ids,
+        attractor_facecolors=attractor_facecolors,
         saddle_manifolds=saddle_manifolds,
         show_saddle_manifolds=show_saddle_manifolds,
         show_cycles=show_cycles,
@@ -698,145 +646,206 @@ def plot_phase_skeleton_t(
     return fig, ax, basin_result
 
 
-def plot_phase_skeleton_on_potential_t(
-    landscape,
-    xx,
-    yy,
-    t,
-    basin_result=None,
-    fixed_points=None,
-    saddle_manifolds=None,
-    show_fixed_points=True,
-    show_cycles=True,
-    show_saddle_manifolds=True,
-    unresolved_color=unresolved_basin_color,
-    basin_coloring='attractor',
-    module_order_colors=None,
-    stable_manifold_color=stable_manifold_color,
-    unstable_manifold_color=unstable_manifold_color,
-    color_surface_by_basin=False,
-    basin_alpha=0.95,
-    elev=None,
-    azim=None,
-    offset=2,
-    cmap_center=None,
-    rot=False,
-    zlim=None,
-    axes=False,
-    z_lift=None,
-):
-    if basin_result is None:
-        basin_result = landscape.find_attractor_basins(t, xx, yy, fixed_points=fixed_points)
-
-    attractors = basin_result['attractors']
-    fixed_points = basin_result['fixed_points']
-    if show_saddle_manifolds and saddle_manifolds is None:
-        saddle_manifolds = landscape.find_saddle_manifolds(
-            t,
-            fixed_points=fixed_points,
-            x_range=(float(np.min(xx)), float(np.max(xx))),
-            y_range=(float(np.min(yy)), float(np.max(yy))),
-        )
-
-    (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
-    del dX, dY
-    surface = np.asarray(rot_potential if rot else potential, dtype=float)
-    surface_cmap = rotational_surface_cmap if rot else potential_surface_cmap
-    if cmap_center is None:
-        cmap_center = float(surface[0, 0])
-
-    basin_image, cmap, norm, attractor_color_ids = _phase_color_data(
-        landscape,
-        basin_result,
-        unresolved_color=unresolved_color,
-        basin_coloring=basin_coloring,
-        module_order_colors=module_order_colors,
-        x_coords=np.asarray(xx[0], dtype=float),
-        y_coords=np.asarray(yy[:, 0], dtype=float),
-    )
-    fig, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(6, 6), facecolor=figure_face_color)
-    ax.set_facecolor(axes_face_color)
-    ax.view_init(elev=elev, azim=azim)
-
-    if zlim is None:
-        ax.set_zlim([np.min(surface) - offset, np.max(surface) + 2])
-        zlow = float(np.min(surface) - offset)
-    else:
-        ax.set_zlim(zlim)
-        zlow = float(zlim[0])
-
-    if z_lift is None:
-        surface_span = float(np.max(surface) - np.min(surface))
-        z_lift = max(1e-3, 0.01 * max(surface_span, 1.0))
-
-    if color_surface_by_basin:
-        facecolors = cmap(norm(basin_image))
-        facecolors[..., 3] = basin_alpha
-        ax.contour(
-            xx,
-            yy,
-            surface,
-            zdir='z',
-            offset=zlow,
-            colors=(projection_contour_color,),
-            linewidths=0.8,
-            alpha=0.4,
-        )
-        ax.plot_surface(
-            xx,
-            yy,
-            surface,
-            facecolors=facecolors,
-            linewidth=0,
-            antialiased=False,
-            shade=False,
-        )
-    else:
-        ax.contour(xx, yy, surface, zdir='z', offset=zlow, cmap=surface_cmap, norm=CenteredNorm(cmap_center))
-        ax.plot_surface(
-            xx,
-            yy,
-            surface,
-            cmap=surface_cmap,
-            linewidth=0,
-            antialiased=False,
-            norm=CenteredNorm(cmap_center),
-        )
-
-    _plot_phase_overlays_3d(
-        ax,
-        landscape,
-        t,
-        attractors,
-        fixed_points,
-        cmap,
-        attractor_color_ids=attractor_color_ids,
-        saddle_manifolds=saddle_manifolds,
-        show_saddle_manifolds=show_saddle_manifolds,
-        show_cycles=show_cycles,
-        show_fixed_points=show_fixed_points,
-        stable_manifold_color=stable_manifold_color,
-        unstable_manifold_color=unstable_manifold_color,
-        rot=rot,
-        z_lift=z_lift,
-    )
-
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.zaxis.set_tick_params(color=axes_face_color)
-    ax.set_zticklabels([])
-    ax.xaxis.set_pane_color(transparent_pane_color)
-    ax.yaxis.set_pane_color(transparent_pane_color)
-    ax.zaxis.set_pane_color(transparent_pane_color)
-    if not axes:
-        ax.set_axis_off()
-    return fig, ax, basin_result
+# def plot_phase_skeleton_on_potential_t(
+#     landscape,
+#     xx,
+#     yy,
+#     t,
+#     basin_result=None,
+#     fixed_points=None,
+#     saddle_manifolds=None,
+#     show_fixed_points=True,
+#     show_cycles=True,
+#     show_saddle_manifolds=True,
+#     unresolved_color=unresolved_basin_color,
+#     basin_coloring='attractor',
+#     module_order_colors=None,
+#     stable_manifold_color=stable_manifold_color,
+#     unstable_manifold_color=unstable_manifold_color,
+#     color_surface_by_basin=False,
+#     basin_alpha=0.95,
+#     elev=None,
+#     azim=None,
+#     offset=2,
+#     cmap_center=None,
+#     rot=False,
+#     zlim=None,
+#     axes=False,
+#     z_lift=None,
+# ):
+#     if basin_result is None:
+#         basin_result = landscape.find_attractor_basins(t, xx, yy, fixed_points=fixed_points)
+#
+#     attractors = basin_result['attractors']
+#     fixed_points = basin_result['fixed_points']
+#     if show_saddle_manifolds and saddle_manifolds is None:
+#         saddle_manifolds = landscape.find_saddle_manifolds(
+#             t,
+#             fixed_points=fixed_points,
+#             x_range=(float(np.min(xx)), float(np.max(xx))),
+#             y_range=(float(np.min(yy)), float(np.max(yy))),
+#         )
+#
+#     (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
+#     del dX, dY
+#     surface = np.asarray(rot_potential if rot else potential, dtype=float)
+#     surface_cmap = rotational_surface_cmap if rot else potential_surface_cmap
+#     if cmap_center is None:
+#         cmap_center = float(surface[0, 0])
+#
+#     basin_image, cmap, norm, attractor_color_ids, attractor_facecolors = _phase_color_data(
+#         landscape,
+#         basin_result,
+#         unresolved_color=unresolved_color,
+#         basin_coloring=basin_coloring,
+#         module_order_colors=module_order_colors,
+#         x_coords=np.asarray(xx[0], dtype=float),
+#         y_coords=np.asarray(yy[:, 0], dtype=float),
+#     )
+#     fig, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(6, 6), facecolor=figure_face_color)
+#     ax.set_facecolor(axes_face_color)
+#     ax.view_init(elev=elev, azim=azim)
+#
+#     if zlim is None:
+#         ax.set_zlim([np.min(surface) - offset, np.max(surface) + 2])
+#         zlow = float(np.min(surface) - offset)
+#     else:
+#         ax.set_zlim(zlim)
+#         zlow = float(zlim[0])
+#
+#     if z_lift is None:
+#         surface_span = float(np.max(surface) - np.min(surface))
+#         z_lift = max(1e-3, 0.01 * max(surface_span, 1.0))
+#
+#     if color_surface_by_basin:
+#         facecolors = cmap(norm(basin_image))
+#         facecolors[..., 3] = basin_alpha
+#         ax.contour(
+#             xx,
+#             yy,
+#             surface,
+#             zdir='z',
+#             offset=zlow,
+#             colors=(projection_contour_color,),
+#             linewidths=0.8,
+#             alpha=0.4,
+#         )
+#         ax.plot_surface(
+#             xx,
+#             yy,
+#             surface,
+#             facecolors=facecolors,
+#             linewidth=0,
+#             antialiased=False,
+#             shade=False,
+#         )
+#     else:
+#         ax.contour(xx, yy, surface, zdir='z', offset=zlow, cmap=surface_cmap, norm=CenteredNorm(cmap_center))
+#         ax.plot_surface(
+#             xx,
+#             yy,
+#             surface,
+#             cmap=surface_cmap,
+#             linewidth=0,
+#             antialiased=False,
+#             norm=CenteredNorm(cmap_center),
+#         )
+#
+#     fixed_label_map = {
+#         attractor.get('fixed_point_index'): attractor['id']
+#         for attractor in attractors
+#         if attractor['type'] == 'fixed_point'
+#     }
+#
+#     def basin_color_for_id(attractor_id):
+#         if attractor_color_ids is not None and int(attractor_id) in attractor_color_ids:
+#             color_index = attractor_color_ids[int(attractor_id)]
+#         else:
+#             color_index = int(attractor_id) + 1
+#         return _indexed_cmap_color(cmap, color_index)
+#
+#     def surface_values(x_coords, y_coords):
+#         _, potential_values, rot_potential = landscape(t, (x_coords, y_coords), return_potentials=True)
+#         return np.asarray(rot_potential if rot else potential_values, dtype=float)
+#
+#     if show_saddle_manifolds and saddle_manifolds is not None:
+#         _plot_saddle_manifolds_3d(
+#             ax,
+#             landscape,
+#             t,
+#             saddle_manifolds,
+#             stable_manifold_color=stable_manifold_color,
+#             unstable_manifold_color=unstable_manifold_color,
+#             rot=rot,
+#             z_lift=z_lift,
+#         )
+#
+#     if show_cycles:
+#         for attractor in attractors:
+#             if attractor['type'] != 'cycle':
+#                 continue
+#             color = basin_color_for_id(attractor['id'])
+#             h, l, s = colorsys.rgb_to_hls(*np.asarray(color[:3], dtype=float))
+#             dark_color = colorsys.hls_to_rgb(
+#                 h,
+#                 max(cycle_line_lightness_floor, cycle_line_lightness_scale * l),
+#                 min(1.0, cycle_line_saturation_scale * s),
+#             )
+#             traj = np.asarray(attractor['trajectory'])
+#             z_coords = surface_values(traj[:, 0], traj[:, 1]) + z_lift
+#             ax.plot(traj[:, 0], traj[:, 1], z_coords, color=dark_color, linewidth=2.9, zorder=6)
+#
+#     if show_fixed_points and fixed_points['points'].size:
+#         marker_map = {
+#             'attractor': 'o',
+#             'repeller': 's',
+#             'saddle': 'X',
+#             'center_or_degenerate': 'D',
+#         }
+#         points = np.asarray(fixed_points['points'], dtype=float)
+#         z_points = surface_values(points[:, 0], points[:, 1]) + z_lift
+#         for idx, point in enumerate(points):
+#             stability = str(fixed_points['stability'][idx])
+#             marker = marker_map.get(stability, 'o')
+#             if idx in fixed_label_map:
+#                 attractor_id = fixed_label_map[idx]
+#                 facecolor = attractor_facecolors.get(attractor_id, basin_color_for_id(attractor_id))
+#                 edgecolor = outline_color
+#                 size = 82
+#             else:
+#                 facecolor = unassigned_fixed_point_face_color
+#                 edgecolor = outline_color
+#                 size = 72
+#             ax.scatter(
+#                 point[0],
+#                 point[1],
+#                 z_points[idx],
+#                 marker=marker,
+#                 facecolors=facecolor,
+#                 edgecolors=edgecolor,
+#                 linewidths=1.2,
+#                 s=size,
+#                 zorder=8,
+#                 depthshade=False,
+#             )
+#
+#     ax.set_xticks([])
+#     ax.set_yticks([])
+#     ax.zaxis.set_tick_params(color=axes_face_color)
+#     ax.set_zticklabels([])
+#     ax.xaxis.set_pane_color(transparent_pane_color)
+#     ax.yaxis.set_pane_color(transparent_pane_color)
+#     ax.zaxis.set_pane_color(transparent_pane_color)
+#     if not axes:
+#         ax.set_axis_off()
+#     return fig, ax, basin_result
 
 # _____________________________________________________________________________________________________________________
 
 
 def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp_types', elev=None, azim=None, offset=2,
-                        cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True):
+                        cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True,
+                        basin_result=None, show_saddle_manifolds=False):
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
     # circles = []
     fig, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(6, 6))
@@ -861,6 +870,7 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
     else:
         ax.set_zlim(zlim)
         zlow = zlim[0]
+
     ax.contour(xx, yy, potential, zdir='z', offset=zlow, cmap=cmap, norm=CenteredNorm(cmap_center))
     ax.plot_surface(xx, yy, potential, cmap=cmap, linewidth=0, antialiased=False, norm=CenteredNorm(cmap_center))
     if rot_contour:
@@ -893,6 +903,60 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
                         left = base + arrow_size * (perp_vector * 0.4 - direction)
                         right = base + arrow_size * (-perp_vector * 0.4 - direction)
                         ax.plot(*zip(left, base, right), color=line_color, linewidth=1.5, zorder=100)
+    if basin_result:
+        show_saddle_manifolds = True
+    if show_saddle_manifolds:
+        z_lift = 0
+
+        if basin_result is None:
+            basin_result = landscape.find_attractor_basins(
+                t,
+                xx,
+                yy,
+            )
+        fixed_points = basin_result.get('fixed_points')
+        saddle_manifolds = landscape.find_saddle_manifolds(
+            t,
+            fixed_points=fixed_points,
+            x_range=(float(np.min(xx)), float(np.max(xx))),
+            y_range=(float(np.min(yy)), float(np.max(yy))),
+        )
+        _plot_saddle_manifolds_3d(
+            ax,
+            landscape,
+            t,
+            saddle_manifolds,
+            stable_manifold_color=stable_manifold_color,
+            unstable_manifold_color=unstable_manifold_color,
+            rot=rot,
+            z_lift=z_lift,
+        )
+        attractor_indices = [
+            int(attractor['fixed_point_index'])
+            for attractor in basin_result.get('attractors', ())
+            if attractor.get('type') == 'fixed_point' and attractor.get('fixed_point_index') is not None
+        ]
+        if attractor_indices:
+            attractor_indices = np.asarray(attractor_indices, dtype=int)
+            attractor_points = np.asarray(fixed_points['points'], dtype=float)[attractor_indices]
+            _, potential_values, rot_values = landscape(
+                t,
+                (attractor_points[:, 0], attractor_points[:, 1]),
+                return_potentials=True,
+            )
+            attractor_z = np.asarray(rot_values if rot else potential_values, dtype=float) + z_lift
+            ax.plot(
+                attractor_points[:, 0],
+                attractor_points[:, 1],
+                attractor_z,
+                markersize=4,
+                lw=0,
+                color='w',
+                marker='o',
+                # edgecolor=None,
+                zorder=120,
+                # depthshade=False,
+            )
 
     if scatter:
         for i, module in enumerate(landscape.module_list):
