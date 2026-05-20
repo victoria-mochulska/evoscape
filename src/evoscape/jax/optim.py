@@ -8,6 +8,7 @@ from jax import value_and_grad, jit
 from jax.lax import scan
 
 import optax
+from flax import nnx
 
 # Clipping function for non negative value allowed. Clipping values should be chosen wisely
 def clip_dynamic(dynamic):
@@ -78,13 +79,51 @@ def run_optimization_optax(dynamic, key, steps, loss_fn, optimizer):
         loss, grads = value_and_grad_fn(dynamic, subkey)
         updates, opt_state = optimizer.update(grads, opt_state)
         dynamic = optax.apply_updates(dynamic, updates)
+        dynamic = clip_dynamic(dynamic)
 
         # saving losses and current landscape
         fitness_vals.append(loss)
         dynamic_vals.append(dynamic)
 
-        if step%5 == 0:
+        if step%20 == 0:
             print(f"Train step {step} : Loss = {loss}")
         
     return dynamic_vals, fitness_vals
         
+def run_optimization_decoder(dynamic, decoder, key, steps, loss_fn, opt_dynamic, opt_decoder):
+    """
+    For now, dynamic and decoder are separated models, so we need one optimizer for each.
+    Both optimizer are from optax, but we use nnx.Optimizer with opt_decoder to benefit from nnx simplicity
+
+    As a result, the code uses a sort of hybrid approach that may need to be changed later 
+    (for example, creating a class landscape that inherits from nnx.Module ?)
+
+    """
+    opt_dynamic_state = opt_dynamic.init(dynamic)
+    opt_decoder = nnx.Optimizer(decoder, opt_decoder, wrt=nnx.Param) # optax.optimizer -> nnx.Optimizer
+
+    fitness_vals = []
+    dynamic_vals = []
+
+    value_and_grad_fn = nnx.jit(nnx.value_and_grad(loss_fn, argnums=(0,1)))
+
+    for step in range(steps):
+        # one optimizer step
+        key, subkey = jrd.split(key)
+
+        loss, (grads_dynamic, grads_decoder) = value_and_grad_fn(dynamic, decoder, subkey)
+
+        updates_dynamic, opt_dynamic_state = opt_dynamic.update(grads_dynamic, opt_dynamic_state)
+        dynamic = optax.apply_updates(dynamic, updates_dynamic)
+        dynamic = clip_dynamic(dynamic)
+
+        opt_decoder.update(decoder, grads_decoder)
+
+        # saving losses and current landscape
+        fitness_vals.append(loss)
+        dynamic_vals.append(dynamic)
+
+        if step%20 == 0:
+            print(f"Train step {step} : Loss = {loss}")
+        
+    return dynamic_vals, fitness_vals

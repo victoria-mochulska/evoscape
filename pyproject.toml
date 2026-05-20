@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-numpy = "^1.26.4"
+numpy = ">=2.0"
 matplotlib = "^3.9.0"
 scikit-image = "^0.23.2"
 cmcrameri = "^1.9"
@@ -16,6 +16,7 @@ seaborn = "^0.13.2"
 imageio = "^2.37.0"
 jupyter = "^1.1.1"
 optax = "^0.2.8"
+flax = "^0.12.7"
 
 [tool.poetry.group.jax]
 optional = true
