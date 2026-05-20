@@ -80,10 +80,10 @@ def landscape_to_pytree(landscape):
         regime_id=from_regime_to_number(landscape.regime),
         module=module_static,
         morphogen_times=jnp.array(landscape.morphogen_times),
+        init_cond=jnp.array(landscape.init_cond),
     )
 
     dynamic = LandscapeDynamic(
-        init_cond=jnp.array(landscape.init_cond),
         module=module_dynamic,
     )
 
@@ -172,7 +172,7 @@ def pytree_to_landscape(
     landscape = Landscape(
         module_list=module_list,
         A0=float(static.A0),
-        init_cond=tuple(np.asarray(dynamic.init_cond).tolist()),
+        init_cond=tuple(np.asarray(static.init_cond).tolist()),
         regime=from_number_to_regime(static.regime_id),
         n_regimes=int(static.n_regimes),
         morphogen_times=morphogen_times,

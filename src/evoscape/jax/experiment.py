@@ -11,10 +11,10 @@ from .converters import landscape_to_pytree, pytree_to_landscape
 from .dynamics import _integrate, state_probs
 from .optim import make_step, clip_dynamic, run_optimization, run_optimization_optax
 from .regimes import wrapped_regime
-
+from .utils import init_cell
 
 class Experiment:
-    def __init__(self, landscape: Any):
+    def __init__(self, landscape: Any, seed = 42):
         self.dynamic, self.static = landscape_to_pytree(landscape)
 
         # Things the user can configure via setters
@@ -27,10 +27,15 @@ class Experiment:
         self.states = None
         self.fitness_vals = None
         self.dynamic_vals = None
+        self.key = jrd.PRNGKey(seed)
     # ------------------------------------------------------------------
     # SETTERS (one responsibility each)
     # ------------------------------------------------------------------
 
+    def get_key(self):
+            self.key, subkey = jrd.split(self.key)
+            return subkey
+    
     def set_initial_conditions(self, q_init):
         """Initial conditions for the simulation."""
         self.q_init = jnp.asarray(q_init)
@@ -40,9 +45,11 @@ class Experiment:
         self.signal_param = signal_param
         self.regime = wrapped_regime(self.static, self.signal_param)
 
-    def set_simulation(self, t0: float, tf: float, nt: int, ndt: int, noise: float):
+    def set_simulation(self, n: int, cell_noise: float, t0: float, tf: float, nt: int, ndt: int, noise: float):
         """Simulation parameters passed to integrate."""
         self.sim_params = dict(
+            n=n,
+            cell_noise=cell_noise,
             t0=t0,
             tf=tf,
             nt=nt,
@@ -86,8 +93,8 @@ class Experiment:
             result=result,
         )
 
-    def get_trajectory(self, seed=42):
-        key = jrd.PRNGKey(seed)
+    def get_trajectory(self):
+        key = self.get_key()
 
         p = self.sim_params
 
@@ -124,11 +131,13 @@ class Experiment:
     # OPTIMIZATION
     # ------------------------------------------------------------------
 
-    def optimize(self, user_fitness: Callable, fitness_params = None, steps: int = 50, optimizer=optax.adam(0.1), seed: int = 42):
-        key = jrd.PRNGKey(seed)
+    def optimize(self, user_fitness: Callable, fitness_params = None, steps: int = 50, optimizer=optax.adam(0.1)):
+        key = self.get_key()
 
         p = self.sim_params
 
+        n =p["n"]
+        cell_noise = p["cell_noise"]
         t0 = p["t0"]
         tf = p["tf"]
         nt = p["nt"]
@@ -137,12 +146,13 @@ class Experiment:
 
         q_init = self.q_init
         if q_init is None:
-            q_init = jnp.asarray(self.dynamic.init_cond)[:, None]
+            q_init = jnp.asarray(self.static.init_cond)[:, None]
 
         def loss_fn(dynamic, subkey):
+            subkey, q_noisy = init_cell(subkey,n,q_init,cell_noise)
             _, traj, states = _integrate(
                 subkey,
-                q_init,
+                q_noisy,
                 t0,
                 tf,
                 nt,
@@ -159,6 +169,8 @@ class Experiment:
         dynamic_vals, fitness_vals = run_optimization_optax(self.dynamic, key, steps, loss_fn, optimizer)
         self.dynamic = dynamic_vals[-1]
 
+        key = self.get_key()
+        key, q_noisy = init_cell(key,n,q_init,cell_noise)
 
         _, traj, states = _integrate(
             key,
@@ -177,7 +189,7 @@ class Experiment:
         self.trajectories = traj
         self.states = states
         self.fitness_vals = fitness_vals
-        ## self.dynamic_vals = [ tree_map(lambda x: x[t], dynamic_vals) for t in range(len(dynamic_vals[0])) ]
+        ## self.dynamic_vals = [ tree_map(lambda x: x[t], dynamic_vals) for t in range(len(n)) ]
         self.dynamic_vals = dynamic_vals
 
         return fitness_vals
