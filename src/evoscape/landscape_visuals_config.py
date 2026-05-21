@@ -2,10 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from cmcrameri import cm as scm
-from matplotlib.colors import BoundaryNorm, ListedColormap, to_rgb
+from matplotlib.colors import BoundaryNorm, ListedColormap, to_rgb, to_rgba
 
 
-figure_dpi = 200
+figure_dpi = 100
 
 figure_face_color = 'white'
 axes_face_color = 'white'
@@ -55,6 +55,16 @@ def lighten_colors(colors, amount=0.4):
         lightened_colors.append(tuple(np.clip(lightened_rgb, 0.0, 1.0)))
     return tuple(lightened_colors)
 
+
+def indexed_cmap_color(cmap, color_index):
+    colors = getattr(cmap, 'colors', None)
+    if colors is not None and 0 <= int(color_index) < len(colors):
+        return to_rgba(colors[int(color_index)])
+    if getattr(cmap, 'N', 0):
+        denominator = max(int(cmap.N) - 1, 1)
+        return to_rgba(cmap(float(color_index) / float(denominator)))
+    return to_rgba(cmap(color_index))
+
 pastel_order_colors = lighten_colors(order_colors, amount=0.4)
 
 
@@ -80,6 +90,6 @@ potential_surface_cmap = scm.cork.reversed()
 rotational_surface_cmap = 'RdBu_r'
 velocity_cmap = 'Greys'
 
-cycle_line_lightness_floor = 0.2
-cycle_line_lightness_scale = 0.8
-cycle_line_saturation_scale = 1.1
+cycle_line_lightness_floor = 0.35
+cycle_line_lightness_scale = 0.0
+cycle_line_saturation_scale = 1.

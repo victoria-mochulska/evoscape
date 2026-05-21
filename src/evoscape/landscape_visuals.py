@@ -3,7 +3,7 @@ import numpy as np
 import colorsys
 from copy import copy
 
-from matplotlib.colors import ListedColormap, BoundaryNorm, CenteredNorm, to_rgba, to_rgb
+from matplotlib.colors import ListedColormap, BoundaryNorm, CenteredNorm
 # import matplotlib.cm as cm
 from matplotlib.gridspec import GridSpec
 import imageio.v2 as imageio
@@ -40,10 +40,12 @@ from .landscape_visuals_config import (
     cycle_line_lightness_scale,
     cycle_line_saturation_scale,
     phase_basin_palette,
+    lighten_colors,
+    indexed_cmap_color,
 )
 
 plt.rcParams.update({'figure.dpi': figure_dpi})  # Change to 200 for high res figures, 100 for normal
-
+# __________________________________________________________________________________________________
 
 # def sync_order_colors_from_config():
 #     global order_colors, pastel_order_colors, cmap_state, norm_state
@@ -57,284 +59,8 @@ plt.rcParams.update({'figure.dpi': figure_dpi})  # Change to 200 for high res fi
 #     visuals_config.set_order_colors(colors, lighten_amount=lighten_amount)
 #     sync_order_colors_from_config()
 
-
-def _indexed_cmap_color(cmap, color_index):
-    colors = getattr(cmap, 'colors', None)
-    if colors is not None and 0 <= int(color_index) < len(colors):
-        return to_rgba(colors[int(color_index)])
-    if getattr(cmap, 'N', 0):
-        denominator = max(int(cmap.N) - 1, 1)
-        return to_rgba(cmap(float(color_index) / float(denominator)))
-    return to_rgba(cmap(color_index))
-
-
-def _node_state_colors(landscape, colors=None):
-    base_colors = tuple(colors) if colors is not None else tuple(order_colors)
-    if len(base_colors) == 0:
-        base_colors = (neutral_color,)
-    return tuple(base_colors[index % len(base_colors)] for index in range(landscape.n_nodes))
-
-
-def _node_state_cmap_and_norm(landscape, colors=None, include_unassigned=True):
-    node_colors = _node_state_colors(landscape, colors=colors)
-    if include_unassigned:
-        cmap = ListedColormap([neutral_color] + list(node_colors))
-        norm = BoundaryNorm(np.arange(len(node_colors) + 2) - 1.5, cmap.N)
-    else:
-        if node_colors:
-            cmap = ListedColormap(node_colors)
-            norm = BoundaryNorm(np.arange(len(node_colors) + 1) - 0.5, cmap.N)
-        else:
-            cmap = ListedColormap([neutral_color])
-            norm = BoundaryNorm(np.array([-0.5, 0.5]), cmap.N)
-    return cmap, norm, node_colors
-
-
-def _lighten_color_sequence(colors, amount=0.4):
-    white = np.ones(3, dtype=float)
-    lightened_colors = []
-    for color in colors:
-        rgb = np.asarray(to_rgb(color), dtype=float)
-        lightened_rgb = (1.0 - amount) * rgb + amount * white
-        lightened_colors.append(tuple(np.clip(lightened_rgb, 0.0, 1.0)))
-    return tuple(lightened_colors)
-
-
-def _ordered_circle_patches(circle_patches):
-    return [
-        patch
-        for _, _, patch in sorted(
-            (
-                (-float(getattr(patch, "radius", 0.0)), index, patch)
-                for index, patch in enumerate(circle_patches)
-            ),
-            key=lambda item: (item[0], item[1]),
-        )
-    ]
-
-
-def _plot_saddle_manifolds_3d(
-    ax,
-    landscape,
-    t,
-    saddle_manifolds,
-    stable_manifold_color=stable_manifold_color,
-    unstable_manifold_color=unstable_manifold_color,
-    rot=False,
-    z_lift=0.0,
-):
-    if saddle_manifolds is None:
-        return
-
-    def surface_values(x_coords, y_coords):
-        _, potential_values, rot_potential = landscape(t, (x_coords, y_coords), return_potentials=True)
-        return np.asarray(rot_potential if rot else potential_values, dtype=float)
-
-    for saddle in saddle_manifolds.get('saddles', ()):
-        # for branch in saddle.get('stable', ()):
-        #     branch = np.asarray(branch, dtype=float)
-        #     if branch.shape[0] >= 2:
-        #         z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
-        #         ax.plot(
-        #             branch[:, 0],
-        #             branch[:, 1],
-        #             z_coords,
-        #             color='steelblue',
-        #             linestyle='-',
-        #             linewidth=2.,
-        #             alpha=1.,
-        #             zorder=100,
-        #         )
-        for branch in saddle.get('unstable', ()):
-            branch = np.asarray(branch, dtype=float)
-            if branch.shape[0] >= 2:
-                z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
-                ax.plot(
-                    branch[:, 0],
-                    branch[:, 1],
-                    z_coords,
-                    color='pink',
-                    linestyle='-',
-                    linewidth=2.,
-                    alpha=1.,
-                    zorder=110,
-                )
-
-
-def _phase_color_data(
-    landscape,
-    basin_result,
-    unresolved_color,
-    basin_coloring='attractor',
-    module_order_colors=None,
-    x_coords=None,
-    y_coords=None,
-):
-    labels = np.asarray(basin_result['labels'], dtype=int)
-    attractors = basin_result['attractors']
-    basin_coloring = str(basin_coloring).lower()
-
-    if basin_coloring == 'attractor':
-        cmap = phase_basin_palette(len(attractors), unresolved_color=unresolved_color)
-        norm = BoundaryNorm(np.arange(-0.5, len(attractors) + 1.5), cmap.N)
-        attractor_color_ids = {int(attractor['id']): int(attractor['id']) + 1 for attractor in attractors}
-        basin_image = labels + 1
-        attractor_facecolors = {
-            int(attractor['id']): _indexed_cmap_color(cmap, int(attractor['id']) + 1)
-            for attractor in attractors
-        }
-        return basin_image, cmap, norm, attractor_color_ids, attractor_facecolors
-
-    if basin_coloring not in ('module', 'node'):
-        raise ValueError("basin_coloring must be 'attractor' or 'module'.")
-
-    attractor_module_map = landscape._map_attractors_to_nodes(
-        attractors,
-        basin_labels=labels,
-        x_coords=x_coords,
-        y_coords=y_coords,
-    )
-
-    if module_order_colors is None:
-        module_palette = pastel_order_colors
-        attractor_palette = _lighten_color_sequence(tuple(order_colors), amount=0.4)
-    else:
-        module_palette = _lighten_color_sequence(tuple(module_order_colors), amount=0.7)
-        attractor_palette = _lighten_color_sequence(tuple(module_order_colors), amount=0.2)
-
-    colors = [unresolved_color]
-    if len(module_palette) == 0:
-        module_palette = (neutral_color,)
-    if len(attractor_palette) == 0:
-        attractor_palette = (neutral_color,)
-    for node_state in range(landscape.n_nodes):
-        colors.append(module_palette[node_state % len(module_palette)])
-
-    attractor_color_ids = {}
-    attractor_facecolors = {}
-    no_node_attractors = []
-    for attractor in attractors:
-        attractor_id = int(attractor['id'])
-        module_index = attractor_module_map.get(attractor_id)
-        if module_index is None:
-            no_node_attractors.append(attractor_id)
-            continue
-        attractor_color_ids[attractor_id] = int(module_index) + 1
-        attractor_facecolors[attractor_id] = attractor_palette[int(module_index) % len(attractor_palette)]
-
-    for attractor_id in no_node_attractors:
-        colors.append(neutral_color)
-        attractor_color_ids[attractor_id] = len(colors) - 1
-        attractor_facecolors[attractor_id] = neutral_color
-
-    basin_image = np.zeros_like(labels, dtype=int)
-    for attractor_id, color_id in attractor_color_ids.items():
-        basin_image[labels == attractor_id] = int(color_id)
-
-    cmap = ListedColormap(colors)
-    norm = BoundaryNorm(np.arange(-0.5, len(colors) + 0.5), cmap.N)
-    return basin_image, cmap, norm, attractor_color_ids, attractor_facecolors
-
-
-def _plot_phase_overlays(
-    ax,
-    attractors,
-    fixed_points,
-    cmap,
-    attractor_color_ids=None,
-    attractor_facecolors=None,
-    saddle_manifolds=None,
-    show_saddle_manifolds=False,
-    show_cycles=True,
-    show_fixed_points=True,
-    stable_manifold_color=stable_manifold_color,
-    unstable_manifold_color=unstable_manifold_color,
-):
-    if attractor_facecolors is None:
-        attractor_facecolors = {}
-    fixed_label_map = {
-        attractor.get('fixed_point_index'): attractor['id']
-        for attractor in attractors
-        if attractor['type'] == 'fixed_point'
-    }
-
-    def basin_color_for_id(attractor_id):
-        if attractor_color_ids is not None and int(attractor_id) in attractor_color_ids:
-            color_index = attractor_color_ids[int(attractor_id)]
-        else:
-            color_index = int(attractor_id) + 1
-        return _indexed_cmap_color(cmap, color_index)
-
-    if show_saddle_manifolds and saddle_manifolds is not None:
-        for saddle in saddle_manifolds.get('saddles', ()):
-            for branch in saddle.get('stable', ()):
-                branch = np.asarray(branch, dtype=float)
-                if branch.shape[0] >= 2:
-                    ax.plot(
-                        branch[:, 0],
-                        branch[:, 1],
-                        color=stable_manifold_color,
-                        linestyle='-',
-                        linewidth=2.6,
-                        alpha=0.95,
-                        zorder=5,
-                    )
-            for branch in saddle.get('unstable', ()):
-                branch = np.asarray(branch, dtype=float)
-                if branch.shape[0] >= 2:
-                    ax.plot(
-                        branch[:, 0],
-                        branch[:, 1],
-                        color=unstable_manifold_color,
-                        linestyle='-',
-                        linewidth=2.6,
-                        alpha=0.95,
-                        zorder=5,
-                    )
-
-    if show_cycles:
-        for attractor in attractors:
-            if attractor['type'] != 'cycle':
-                continue
-            color = basin_color_for_id(attractor['id'])
-            h, l, s = colorsys.rgb_to_hls(*np.asarray(color[:3], dtype=float))
-            dark_color = colorsys.hls_to_rgb(
-                h,
-                max(cycle_line_lightness_floor, cycle_line_lightness_scale * l),
-                min(1.0, cycle_line_saturation_scale * s),
-            )
-            traj = np.asarray(attractor['trajectory'])
-            ax.plot(traj[:, 0], traj[:, 1], color=dark_color, linewidth=2.9, zorder=6)
-
-    if show_fixed_points and fixed_points['points'].size:
-        marker_map = {
-            'attractor': 'o',
-            'repeller': 's',
-            'saddle': 'X',
-            'center_or_degenerate': 'D',
-        }
-        for idx, point in enumerate(fixed_points['points']):
-            stability = str(fixed_points['stability'][idx])
-            marker = marker_map.get(stability, 'o')
-            if idx in fixed_label_map:
-                attractor_id = fixed_label_map[idx]
-                facecolor = attractor_facecolors.get(attractor_id, basin_color_for_id(attractor_id))
-                edgecolor = outline_color
-                size = 150 #82
-            else:
-                facecolor = unassigned_fixed_point_face_color
-                edgecolor = outline_color
-                size = 120 # 72
-            ax.scatter(
-                point[0],
-                point[1],
-                marker=marker,
-                facecolors=facecolor,
-                edgecolors=edgecolor,
-                linewidths=1.2,
-                s=size,
-                zorder=8,
-            )
+#______________________________________________________________________________________________________________
+# _____________________________________________________________________________________________________________
 
 def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', draw_circles=True):
     """ Simple visualization of landscape flow and modules in one regime. """
@@ -471,15 +197,193 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
     stream_ax.set_yticks([])
     return fig, stream_ax
 
+# ___________________________________________________________________________________________________
+# __________________ Phase space plotting (fixed points, cycles, manifolds) _________________________
 
-def visualize_cell_states(landscape, xx, yy, t, abs_threshold=0.):
-    cell_states = landscape.get_cell_states(t, np.array((xx.flatten(), yy.flatten())), abs_threshold=abs_threshold)
-    cmap_state, norm_state, _ = _node_state_cmap_and_norm(landscape, include_unassigned=True)
-    fig, ax = visualize_landscape_t(landscape, xx, yy, t=t, color_scheme='order')
-    # plt.figure()
-    plt.imshow(np.reshape(cell_states, xx.shape), cmap=cmap_state, norm=norm_state, origin='lower',
-               extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)), alpha=0.3, interpolation='nearest')
-    return fig, ax
+def _node_colors_and_cmap(landscape, colors=None, include_unassigned=True):
+    base_colors = tuple(colors) if colors is not None else tuple(order_colors)
+    if len(base_colors) == 0:
+        base_colors = (neutral_color,)
+    node_colors = tuple(base_colors[index % len(base_colors)] for index in range(landscape.n_nodes))
+    if include_unassigned:
+        node_cmap = ListedColormap([neutral_color] + list(node_colors))
+        norm = BoundaryNorm(np.arange(len(node_colors) + 2) - 1.5, node_cmap.N)
+    else:
+        if node_colors:
+            node_cmap = ListedColormap(node_colors)
+            norm = BoundaryNorm(np.arange(len(node_colors) + 1) - 0.5, node_cmap.N)
+        else:
+            node_cmap = ListedColormap([neutral_color])
+            norm = BoundaryNorm(np.array([-0.5, 0.5]), node_cmap.N)
+    return node_colors, node_cmap, norm
+
+
+def _phase_plot_colors(
+    landscape,
+    basin_result,
+    unresolved_color,
+    basin_coloring='attractor',
+    module_order_colors=None,
+    x_coords=None,
+    y_coords=None,
+):
+    labels = np.asarray(basin_result['labels'], dtype=int)
+    attractors = basin_result['attractors']
+    basin_coloring = str(basin_coloring).lower()
+
+    if basin_coloring == 'attractor':
+        cmap = phase_basin_palette(len(attractors), unresolved_color=unresolved_color)
+        norm = BoundaryNorm(np.arange(-0.5, len(attractors) + 1.5), cmap.N)
+        basin_image = labels + 1
+        attractor_facecolors = {
+            int(attractor['id']): indexed_cmap_color(cmap, int(attractor['id']) + 1)
+            for attractor in attractors
+        }
+        return basin_image, cmap, norm, attractor_facecolors
+
+    if basin_coloring not in ('module', 'node'):
+        raise ValueError("basin_coloring must be 'attractor' or 'module'.")
+
+    attractor_module_map = landscape._map_attractors_to_nodes(
+        attractors,
+        basin_labels=labels,
+        x_coords=x_coords,
+        y_coords=y_coords,
+    )
+
+    if module_order_colors is None:
+        module_palette = pastel_order_colors
+        attractor_palette = lighten_colors(tuple(order_colors), amount=0.4)
+    else:
+        module_palette = lighten_colors(tuple(module_order_colors), amount=0.7)
+        attractor_palette = lighten_colors(tuple(module_order_colors), amount=0.2)
+
+    colors = [unresolved_color]
+    if len(module_palette) == 0:
+        module_palette = (neutral_color,)
+    if len(attractor_palette) == 0:
+        attractor_palette = (neutral_color,)
+    for node_state in range(landscape.n_nodes):
+        colors.append(module_palette[node_state % len(module_palette)])
+
+    attractor_color_ids = {}
+    attractor_facecolors = {}
+    no_node_attractors = []
+    for attractor in attractors:
+        attractor_id = int(attractor['id'])
+        module_index = attractor_module_map.get(attractor_id)
+        if module_index is None:
+            no_node_attractors.append(attractor_id)
+            continue
+        attractor_color_ids[attractor_id] = int(module_index) + 1
+        attractor_facecolors[attractor_id] = attractor_palette[int(module_index) % len(attractor_palette)]
+
+    for attractor_id in no_node_attractors:
+        colors.append(neutral_color)
+        attractor_color_ids[attractor_id] = len(colors) - 1
+        attractor_facecolors[attractor_id] = neutral_color
+
+    basin_image = np.zeros_like(labels, dtype=int)
+    for attractor_id, color_id in attractor_color_ids.items():
+        basin_image[labels == attractor_id] = int(color_id)
+
+    cmap = ListedColormap(colors)
+    norm = BoundaryNorm(np.arange(-0.5, len(colors) + 0.5), cmap.N)
+    return basin_image, cmap, norm, attractor_facecolors
+
+
+def _plot_phase_overlays(
+    ax,
+    attractors,
+    fixed_points,
+    cmap,
+    attractor_facecolors=None,
+    saddle_manifolds=None,
+    show_saddle_manifolds=False,
+    show_cycles=True,
+    show_fixed_points=True,
+    stable_manifold_color=stable_manifold_color,
+    unstable_manifold_color=unstable_manifold_color,
+):
+    if attractor_facecolors is None:
+        attractor_facecolors = {}
+    fixed_label_map = {
+        attractor.get('fixed_point_index'): attractor['id']
+        for attractor in attractors
+        if attractor['type'] == 'fixed_point'
+    }
+
+    if show_saddle_manifolds and saddle_manifolds is not None:
+        for saddle in saddle_manifolds.get('saddles', ()):
+            for branch in saddle.get('stable', ()):
+                branch = np.asarray(branch, dtype=float)
+                if branch.shape[0] >= 2:
+                    ax.plot(
+                        branch[:, 0],
+                        branch[:, 1],
+                        color=stable_manifold_color,
+                        linestyle='-',
+                        linewidth=2.6,
+                        alpha=0.95,
+                        zorder=5,
+                    )
+            for branch in saddle.get('unstable', ()):
+                branch = np.asarray(branch, dtype=float)
+                if branch.shape[0] >= 2:
+                    ax.plot(
+                        branch[:, 0],
+                        branch[:, 1],
+                        color=unstable_manifold_color,
+                        linestyle='-',
+                        linewidth=2.6,
+                        alpha=0.95,
+                        zorder=5,
+                    )
+
+    if show_cycles:
+        for attractor in attractors:
+            if attractor['type'] != 'cycle':
+                continue
+            attractor_id = int(attractor['id'])
+            color = attractor_facecolors.get(attractor_id, indexed_cmap_color(cmap, attractor_id + 1))
+            h, l, s = colorsys.rgb_to_hls(*np.asarray(color[:3], dtype=float))
+            dark_color = colorsys.hls_to_rgb(
+                h,
+                max(cycle_line_lightness_floor, cycle_line_lightness_scale * l),
+                min(1.0, cycle_line_saturation_scale * s),
+            )
+            traj = np.asarray(attractor['trajectory'])
+            ax.plot(traj[:, 0], traj[:, 1], color=dark_color, linewidth=2.9, zorder=6)
+
+    if show_fixed_points and fixed_points['points'].size:
+        marker_map = {
+            'attractor': 'o',
+            'repeller': 's',
+            'saddle': 'X',
+            'center_or_degenerate': 'D',
+        }
+        for idx, point in enumerate(fixed_points['points']):
+            stability = str(fixed_points['stability'][idx])
+            marker = marker_map.get(stability, 'o')
+            if idx in fixed_label_map:
+                attractor_id = fixed_label_map[idx]
+                facecolor = attractor_facecolors.get(int(attractor_id), indexed_cmap_color(cmap, int(attractor_id) + 1))
+                edgecolor = outline_color
+                size = 150 #82
+            else:
+                facecolor = unassigned_fixed_point_face_color
+                edgecolor = outline_color
+                size = 120 # 72
+            ax.scatter(
+                point[0],
+                point[1],
+                marker=marker,
+                facecolors=facecolor,
+                edgecolors=edgecolor,
+                linewidths=1.2,
+                s=size,
+                zorder=8,
+            )
 
 
 def plot_attractor_basins_t(
@@ -509,7 +413,7 @@ def plot_attractor_basins_t(
     attractors = basin_result['attractors']
     fixed_points = basin_result['fixed_points']
 
-    basin_image, cmap, norm, attractor_color_ids, attractor_facecolors = _phase_color_data(
+    basin_image, cmap, norm, attractor_facecolors = _phase_plot_colors(
         landscape,
         basin_result,
         unresolved_color=unresolved_color,
@@ -564,7 +468,6 @@ def plot_attractor_basins_t(
         attractors,
         fixed_points,
         cmap,
-        attractor_color_ids=attractor_color_ids,
         attractor_facecolors=attractor_facecolors,
         saddle_manifolds=saddle_manifolds,
         show_saddle_manifolds=show_saddle_manifolds,
@@ -612,7 +515,7 @@ def plot_phase_skeleton_t(
             y_range=(float(np.min(yy)), float(np.max(yy))),
         )
 
-    _, cmap, _, attractor_color_ids, attractor_facecolors = _phase_color_data(
+    _, cmap, _, attractor_facecolors = _phase_plot_colors(
         landscape,
         basin_result,
         unresolved_color=unresolved_color,
@@ -629,7 +532,6 @@ def plot_phase_skeleton_t(
         attractors,
         fixed_points,
         cmap,
-        attractor_color_ids=attractor_color_ids,
         attractor_facecolors=attractor_facecolors,
         saddle_manifolds=saddle_manifolds,
         show_saddle_manifolds=show_saddle_manifolds,
@@ -693,7 +595,7 @@ def plot_phase_skeleton_t(
 #     if cmap_center is None:
 #         cmap_center = float(surface[0, 0])
 #
-#     basin_image, cmap, norm, attractor_color_ids, attractor_facecolors = _phase_color_data(
+#     basin_image, cmap, norm, attractor_facecolors = _phase_plot_colors(
 #         landscape,
 #         basin_result,
 #         unresolved_color=unresolved_color,
@@ -840,8 +742,138 @@ def plot_phase_skeleton_t(
 #         ax.set_axis_off()
 #     return fig, ax, basin_result
 
-# _____________________________________________________________________________________________________________________
+# _____________________________________________________________________________________________________
 
+def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types',
+                  plot_velocities=True, plot_nullclines=True,
+                  plot_traj=True, traj_times=(0., 100., 150), traj_start=50, traj_init_cond=(0., 1.), traj_noise=0., ):
+
+    """
+    Plot 4 panels: potential contour plot, rotational potential contour plot, flow plot with module circles,
+    and flow plot with velocity magnitude
+    :param landscape:
+    :param xx:
+    :param yy:
+    :param times:
+    :param density:
+    :param color_scheme:
+    :param plot_velocities:
+    :param plot_nullclines:
+    :param plot_traj:
+    :param traj_times:
+    :param traj_start:
+    :param traj_init_cond:
+    :param traj_noise:
+    :return:
+    """
+    dX, dY = np.zeros((len(times), *xx.shape)), np.zeros((len(times), *xx.shape))
+    
+    figures = []
+
+    for it in range(len(times)):
+
+        (dX[it], dY[it]), potential, rot_potential = landscape(times[it], (xx, yy), return_potentials=True)
+
+        circles = []
+        for i, module in enumerate(landscape.module_list):
+            V, sig, A = module.get_current_pars(times[it], landscape.regime, *landscape.morphogen_times)
+            if color_scheme == 'fp_types':
+                color = fp_type_colors[module.__class__.__name__]
+            elif color_scheme == 'order':
+                color = order_colors[i]
+            else:
+                color = neutral_color
+            # for negative amplitude - non-filled cicle
+            if A < 0:
+                fill = False
+                lw = 2
+            else:
+                fill = True
+                lw = 0
+            circles.append(plt.Circle((module.x, module.y), 1.18 * float(sig), color=color,
+                                      fill=fill, alpha=0.22 * np.sqrt(float(np.abs(A))), clip_on=True, linewidth=lw))
+
+        vrange = (np.max(rot_potential) - np.min(rot_potential))/2.
+        if vrange == 0.:
+            fig, ax = plt.subplots(1, 3, figsize=(14, 4))
+            circles_ax = ax[1]
+            stream_ax = ax[2]
+            # vrange = 1.
+        else:
+            fig, ax = plt.subplots(1, 4, figsize=(18, 4))
+            circles_ax = ax[2]
+            stream_ax = ax[3]
+            ax[1].imshow(rot_potential, cmap=rotational_surface_cmap, origin='lower', norm=CenteredNorm(0, vrange),
+                         extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
+            ax[1].contour(xx, yy, rot_potential, colors=surface_contour_color, linestyles='solid', origin='lower')
+
+        ax[0].imshow(potential, cmap=potential_surface_cmap, origin='lower', norm=CenteredNorm(0),
+                     extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
+        ax[0].contour(xx, yy, -potential, origin='lower', colors=surface_contour_color)
+
+        for iax in range(len(ax)):
+            ax[iax].set_xticks([])
+            ax[iax].set_yticks([])
+            ax[iax].set_xlim((np.min(xx), np.max(xx)))
+            ax[iax].set_ylim((np.min(yy), np.max(yy)))
+
+        for circle in _ordered_circle_patches(circles):
+            circles_ax.add_patch(copy(circle))
+
+        if plot_velocities:
+            velocities_sq = dX[it] ** 2 + dY[it] ** 2
+            velocities = np.sqrt(velocities_sq)
+            # print('Min velocity:', round(np.min(velocities), 3), ', Max:', round(np.max(velocities), 3),
+            #       ', Mean:', round(np.mean(velocities), 3), ', Median:', round(np.median(velocities), 3))
+
+            stream_ax.imshow(velocities, alpha=0.5, cmap=velocity_cmap, origin='lower',
+                             extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
+
+            # An attempt to plot fixed points - often ends up missing some points - high resolution needed
+            # fp_labels, nlabels = label(velocities_sq < 0.5, return_num=True)
+            # for l in range(nlabels):
+            #     if np.sum(fp_labels == l) <= 1000:
+            #         fp = fp_labels == l
+            #         stream_ax.imshow(fp, alpha=0.5, cmap='Blues', origin='lower',
+            #                          extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
+            # if np.sum(fp_labels == l) <= 50:
+            # fp = velocities_sq == np.min(velocities_sq[fp_labels == l])
+            # if np.sum(fp_labels == l) > 20:
+            #     fp = (velocities_sq < 5e-4) * fp_labels == l
+            # else:
+            #     fp = fp_labels == l
+            # stream_ax.scatter(xx[fp], yy[fp], marker='o', s=50, color='gold', edgecolor=None, zorder=10)
+
+        circles_ax.streamplot(xx, yy, dX[it], dY[it], density=density, arrowsize=2., arrowstyle='->',
+                              linewidth=1,
+                              color=streamline_color)
+        stream_ax.streamplot(xx, yy, dX[it], dY[it], density=density, arrowsize=2., arrowstyle='->',
+                             linewidth=1,
+                             color=streamline_color)
+
+        if plot_nullclines:
+            circles_ax.contour(xx, yy, dX[it], (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
+            circles_ax.contour(xx, yy, dY[it], (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
+            stream_ax.contour(xx, yy, dX[it], (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
+            stream_ax.contour(xx, yy, dY[it], (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
+
+        if plot_traj:
+            # calculate a trajectory in frozen landscape
+            landscape.init_cells(1, traj_init_cond, noise=traj_noise)
+            traj, states = landscape.run_cells(traj_times[0], traj_times[1], traj_times[2], noise=traj_noise,
+                                               ndt=50, frozen=True, t_freeze=times[it])
+            stream_ax.plot(traj[0, 0, traj_start:], traj[1, 0, traj_start:], lw=3, color=trajectory_color)
+
+
+
+        figures.append(fig)
+        # plt.show()
+
+    return figures
+
+
+# _____________________________________________________________________________________________________________________
+# _______________ 3D plot _____________________________________________________________________________________________
 
 def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp_types', elev=None, azim=None, offset=2,
                         cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True,
@@ -988,132 +1020,63 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
     return fig
 
 
-def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types',
-                  plot_velocities=True, plot_nullclines=True,
-                  plot_traj=True, traj_times=(0., 100., 150), traj_start=50, traj_init_cond=(0., 1.), traj_noise=0., ):
+def _plot_saddle_manifolds_3d(
+    ax,
+    landscape,
+    t,
+    saddle_manifolds,
+    stable_manifold_color=stable_manifold_color,
+    unstable_manifold_color=unstable_manifold_color,
+    rot=False,
+    z_lift=0.0,
+):
+    if saddle_manifolds is None:
+        return
 
-    """
-    Plot 4 panels: potential contour plot, rotational potential contour plot, flow plot with module circles,
-    and flow plot with velocity magnitude
-    :param landscape:
-    :param xx:
-    :param yy:
-    :param times:
-    :param density:
-    :param color_scheme:
-    :param plot_velocities:
-    :param plot_nullclines:
-    :param plot_traj:
-    :param traj_times:
-    :param traj_start:
-    :param traj_init_cond:
-    :param traj_noise:
-    :return:
-    """
-    dX, dY = np.zeros((len(times), *xx.shape)), np.zeros((len(times), *xx.shape))
-    
-    figures = []
+    def surface_values(x_coords, y_coords):
+        _, potential_values, rot_potential = landscape(t, (x_coords, y_coords), return_potentials=True)
+        return np.asarray(rot_potential if rot else potential_values, dtype=float)
 
-    for it in range(len(times)):
+    for saddle in saddle_manifolds.get('saddles', ()):
+        # for branch in saddle.get('stable', ()):
+        #     branch = np.asarray(branch, dtype=float)
+        #     if branch.shape[0] >= 2:
+        #         z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
+        #         ax.plot(
+        #             branch[:, 0],
+        #             branch[:, 1],
+        #             z_coords,
+        #             color='steelblue',
+        #             linestyle='-',
+        #             linewidth=2.,
+        #             alpha=1.,
+        #             zorder=100,
+        #         )
+        for branch in saddle.get('unstable', ()):
+            branch = np.asarray(branch, dtype=float)
+            if branch.shape[0] >= 2:
+                z_coords = surface_values(branch[:, 0], branch[:, 1]) + z_lift
+                ax.plot(
+                    branch[:, 0],
+                    branch[:, 1],
+                    z_coords,
+                    color='pink',
+                    linestyle='-',
+                    linewidth=2.,
+                    alpha=1.,
+                    zorder=110,
+                )
 
-        (dX[it], dY[it]), potential, rot_potential = landscape(times[it], (xx, yy), return_potentials=True)
+# ____________________________ Cells, trajectories, misc __________________________________________________________
 
-        circles = []
-        for i, module in enumerate(landscape.module_list):
-            V, sig, A = module.get_current_pars(times[it], landscape.regime, *landscape.morphogen_times)
-            if color_scheme == 'fp_types':
-                color = fp_type_colors[module.__class__.__name__]
-            elif color_scheme == 'order':
-                color = order_colors[i]
-            else:
-                color = neutral_color
-            # for negative amplitude - non-filled cicle
-            if A < 0:
-                fill = False
-                lw = 2
-            else:
-                fill = True
-                lw = 0
-            circles.append(plt.Circle((module.x, module.y), 1.18 * float(sig), color=color,
-                                      fill=fill, alpha=0.22 * np.sqrt(float(np.abs(A))), clip_on=True, linewidth=lw))
-
-        vrange = (np.max(rot_potential) - np.min(rot_potential))/2.
-        if vrange == 0.:
-            fig, ax = plt.subplots(1, 3, figsize=(14, 4))
-            circles_ax = ax[1]
-            stream_ax = ax[2]
-            # vrange = 1.
-        else:
-            fig, ax = plt.subplots(1, 4, figsize=(18, 4))
-            circles_ax = ax[2]
-            stream_ax = ax[3]
-            ax[1].imshow(rot_potential, cmap=rotational_surface_cmap, origin='lower', norm=CenteredNorm(0, vrange),
-                         extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
-            ax[1].contour(xx, yy, rot_potential, colors=surface_contour_color, linestyles='solid', origin='lower')
-
-        ax[0].imshow(potential, cmap=potential_surface_cmap, origin='lower', norm=CenteredNorm(0),
-                     extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
-        ax[0].contour(xx, yy, -potential, origin='lower', colors=surface_contour_color)
-
-        for iax in range(len(ax)):
-            ax[iax].set_xticks([])
-            ax[iax].set_yticks([])
-            ax[iax].set_xlim((np.min(xx), np.max(xx)))
-            ax[iax].set_ylim((np.min(yy), np.max(yy)))
-
-        for circle in _ordered_circle_patches(circles):
-            circles_ax.add_patch(copy(circle))
-
-        if plot_velocities:
-            velocities_sq = dX[it] ** 2 + dY[it] ** 2
-            velocities = np.sqrt(velocities_sq)
-            # print('Min velocity:', round(np.min(velocities), 3), ', Max:', round(np.max(velocities), 3),
-            #       ', Mean:', round(np.mean(velocities), 3), ', Median:', round(np.median(velocities), 3))
-
-            stream_ax.imshow(velocities, alpha=0.5, cmap=velocity_cmap, origin='lower',
-                             extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
-
-            # An attempt to plot fixed points - often ends up missing some points - high resolution needed
-            # fp_labels, nlabels = label(velocities_sq < 0.5, return_num=True)
-            # for l in range(nlabels):
-            #     if np.sum(fp_labels == l) <= 1000:
-            #         fp = fp_labels == l
-            #         stream_ax.imshow(fp, alpha=0.5, cmap='Blues', origin='lower',
-            #                          extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)))
-            # if np.sum(fp_labels == l) <= 50:
-            # fp = velocities_sq == np.min(velocities_sq[fp_labels == l])
-            # if np.sum(fp_labels == l) > 20:
-            #     fp = (velocities_sq < 5e-4) * fp_labels == l
-            # else:
-            #     fp = fp_labels == l
-            # stream_ax.scatter(xx[fp], yy[fp], marker='o', s=50, color='gold', edgecolor=None, zorder=10)
-
-        circles_ax.streamplot(xx, yy, dX[it], dY[it], density=density, arrowsize=2., arrowstyle='->',
-                              linewidth=1,
-                              color=streamline_color)
-        stream_ax.streamplot(xx, yy, dX[it], dY[it], density=density, arrowsize=2., arrowstyle='->',
-                             linewidth=1,
-                             color=streamline_color)
-
-        if plot_nullclines:
-            circles_ax.contour(xx, yy, dX[it], (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
-            circles_ax.contour(xx, yy, dY[it], (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
-            stream_ax.contour(xx, yy, dX[it], (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
-            stream_ax.contour(xx, yy, dY[it], (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
-
-        if plot_traj:
-            # calculate a trajectory in frozen landscape
-            landscape.init_cells(1, traj_init_cond, noise=traj_noise)
-            traj, states = landscape.run_cells(traj_times[0], traj_times[1], traj_times[2], noise=traj_noise,
-                                               ndt=50, frozen=True, t_freeze=times[it])
-            stream_ax.plot(traj[0, 0, traj_start:], traj[1, 0, traj_start:], lw=3, color=trajectory_color)
-
-
-
-        figures.append(fig)
-        # plt.show()
-
-    return figures
+def visualize_cell_states(landscape, xx, yy, t, abs_threshold=0.):
+    cell_states = landscape.get_cell_states(t, np.array((xx.flatten(), yy.flatten())), abs_threshold=abs_threshold)
+    _, node_cmap, norm = _node_colors_and_cmap(landscape, include_unassigned=True)
+    fig, ax = visualize_landscape_t(landscape, xx, yy, t=t, color_scheme='order')
+    # plt.figure()
+    plt.imshow(np.reshape(cell_states, xx.shape), cmap=node_cmap, norm=norm, origin='lower',
+               extent=(np.min(xx), np.max(xx), np.min(yy), np.max(yy)), alpha=0.3, interpolation='nearest')
+    return fig, ax
 
 
 def plot_cells(landscape, L, colors=None):
@@ -1121,8 +1084,8 @@ def plot_cells(landscape, L, colors=None):
     fig, ax = plt.subplots(1, 1, figsize=(4, 4))
     coord = landscape.cell_coordinates
     states = landscape.cell_states
-    cmap_state, norm_state, _ = _node_state_cmap_and_norm(landscape, colors=colors, include_unassigned=True)
-    ax.scatter(coord[0], coord[1], s=8, alpha=0.3, c=states, cmap=cmap_state, norm=norm_state, edgecolors=None)
+    _, node_cmap, norm = _node_colors_and_cmap(landscape, colors=colors, include_unassigned=True)
+    ax.scatter(coord[0], coord[1], s=8, alpha=0.3, c=states, cmap=node_cmap, norm=norm, edgecolors=None)
     ax.set_xlim([-L, L])
     ax.set_ylim([-L, L])
     ax.set_xticks([])
@@ -1149,7 +1112,7 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, s=6, frozen=False
     gs = GridSpec(2, 2, height_ratios=[20, 1], hspace=0.1, wspace=0.05)
     ax0, ax1 = fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])
     ax_cbar, ax_state_cbar = fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1])
-    state_cmap, state_norm, _ = _node_state_cmap_and_norm(
+    node_colors, node_cmap, norm = _node_colors_and_cmap(
         landscape,
         colors=state_colors,
         include_unassigned=True,
@@ -1170,21 +1133,21 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, s=6, frozen=False
     if t_names is not None:
         tbar.set_ticklabels(t_names, fontsize=10)
 
-    ax1.scatter(traj[0, :, :], traj[1, :, :], s=s, alpha=0.2, c=states, cmap=state_cmap, norm=state_norm, edgecolor=None)
+    ax1.scatter(traj[0, :, :], traj[1, :, :], s=s, alpha=0.2, c=states, cmap=node_cmap, norm=norm, edgecolor=None)
     if landscape.n_nodes > 0:
         state_ticks = np.arange(landscape.n_nodes)
         sc1 = ax1.scatter(
             [2 * L] * landscape.n_nodes,
             [2 * L] * landscape.n_nodes,
             c=state_ticks,
-            cmap=state_cmap,
-            norm=state_norm,
+            cmap=node_cmap,
+            norm=norm,
             alpha=0.5,
             s=0.01,
         )
     else:
         state_ticks = np.array([], dtype=int)
-        sc1 = ax1.scatter([2 * L], [2 * L], c=[-1], cmap=state_cmap, norm=state_norm, alpha=0.5, s=0.01)
+        sc1 = ax1.scatter([2 * L], [2 * L], c=[-1], cmap=node_cmap, norm=norm, alpha=0.5, s=0.01)
     cbar = fig.colorbar(sc1, cax=ax_state_cbar, orientation='horizontal', label='Cell state')
 
     cbar.set_ticks(state_ticks)
@@ -1197,6 +1160,19 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, s=6, frozen=False
         ax.set_xticks([])
         ax.set_yticks([])
     return fig
+
+
+def _ordered_circle_patches(circle_patches):
+    return [
+        patch
+        for _, _, patch in sorted(
+            (
+                (-float(getattr(patch, "radius", 0.0)), index, patch)
+                for index, patch in enumerate(circle_patches)
+            ),
+            key=lambda item: (item[0], item[1]),
+        )
+    ]
 
 
 def circle_plot(landscape, regime=None, L=6, color_scheme='order', lw=4):
