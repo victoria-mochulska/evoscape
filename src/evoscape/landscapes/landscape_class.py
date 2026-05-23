@@ -146,45 +146,6 @@ class Landscape(LandscapePhaseAnalysisBase):
             attractor_anchors[attractor_id] = anchor
 
         attractor_node_states = {}
-
-        if basin_labels is not None and x_coords is not None and y_coords is not None and attractor_order:
-            x_coords = np.asarray(x_coords, dtype=float)
-            y_coords = np.asarray(y_coords, dtype=float)
-            basin_labels = np.asarray(basin_labels, dtype=int)
-            sampled_labels = np.full(self.n_nodes, -1, dtype=int)
-
-            for node_state, (x_node, y_node) in enumerate(node_coords):
-                if (
-                    x_node < x_coords[0]
-                    or x_node > x_coords[-1]
-                    or y_node < y_coords[0]
-                    or y_node > y_coords[-1]
-                ):
-                    continue
-                if x_coords.size > 1:
-                    ix = int(np.rint((x_node - x_coords[0]) / (x_coords[1] - x_coords[0])))
-                else:
-                    ix = 0
-                if y_coords.size > 1:
-                    iy = int(np.rint((y_node - y_coords[0]) / (y_coords[1] - y_coords[0])))
-                else:
-                    iy = 0
-                if 0 <= ix < basin_labels.shape[1] and 0 <= iy < basin_labels.shape[0]:
-                    sampled_labels[node_state] = int(basin_labels[iy, ix])
-
-            for attractor_id in attractor_order:
-                owner_nodes = np.flatnonzero(sampled_labels == attractor_id)
-                if owner_nodes.size == 0:
-                    continue
-                if owner_nodes.size == 1:
-                    node_state = int(owner_nodes[0])
-                else:
-                    anchor = attractor_anchors[attractor_id]
-                    distances = np.linalg.norm(node_coords[owner_nodes] - anchor[None, :], axis=1)
-                    node_state = int(owner_nodes[int(np.argmin(distances))])
-                attractor_node_states[attractor_id] = node_state
-            return attractor_node_states
-
         for attractor_id in attractor_order:
             anchor = attractor_anchors[attractor_id]
             distances = np.linalg.norm(node_coords - anchor[None, :], axis=1)
@@ -208,40 +169,42 @@ class Landscape(LandscapePhaseAnalysisBase):
         pad = max(0.5, 0.15 * span)
         return (x_min - pad, x_max + pad), (y_min - pad, y_max + pad)
 
-    def _build_basin_state_grid(self, t, coordinate, grid_points=201):
+    def _build_basin_state_grid(self, t, coordinate, basin_xx=None, basin_yy=None, basin_grid=None):
         coordinate = self._coerce_coordinate_array(coordinate)
-        x_range, y_range = self._auto_basin_ranges(coordinate)
-        x_coords = np.linspace(*x_range, int(grid_points))
-        y_coords = np.linspace(*y_range, int(grid_points))
-        xx, yy = np.meshgrid(x_coords, y_coords, indexing='xy')
-
-        fixed_points = self.find_fixed_points(t, x_range, y_range)
-        saddle_manifolds = self.find_saddle_manifolds(
-            t,
-            fixed_points=fixed_points,
-            x_range=x_range,
-            y_range=y_range,
+        if isinstance(basin_grid, dict):
+            x_coords = np.asarray(basin_grid["x_coords"], dtype=float)
+            y_coords = np.asarray(basin_grid["y_coords"], dtype=float)
+            node_labels = np.asarray(basin_grid["node_labels"], dtype=int)
+            if basin_xx is not None and basin_yy is not None:
+                xx = np.asarray(basin_xx, dtype=float)
+                yy = np.asarray(basin_yy, dtype=float)
+                if xx.shape != yy.shape or node_labels.shape != xx.shape:
+                    raise ValueError("basin_grid metadata must match the provided basin_xx/basin_yy shape.")
+                if not np.allclose(x_coords, xx[0]) or not np.allclose(y_coords, yy[:, 0]):
+                    raise ValueError("basin_grid metadata must match the provided basin_xx/basin_yy coordinates.")
+            return x_coords, y_coords, node_labels
+        if basin_grid is not None:
+            x_coords, y_coords, node_labels = basin_grid
+            return (
+                np.asarray(x_coords, dtype=float),
+                np.asarray(y_coords, dtype=float),
+                np.asarray(node_labels, dtype=int),
+            )
+        if (basin_xx is None) != (basin_yy is None):
+            raise ValueError("basin_xx and basin_yy must be provided together.")
+        if basin_xx is None:
+            raise ValueError("Basin-based cell states require either basin_grid or both basin_xx and basin_yy.")
+        xx = np.asarray(basin_xx, dtype=float)
+        yy = np.asarray(basin_yy, dtype=float)
+        if xx.shape != yy.shape:
+            raise ValueError("basin_xx and basin_yy must have the same shape.")
+        phase_result = self.find_phase_objects_manifold(t, xx, yy)
+        basin_grid = self.find_attractor_basins_manifold(phase_result)
+        return (
+            np.asarray(basin_grid["x_coords"], dtype=float),
+            np.asarray(basin_grid["y_coords"], dtype=float),
+            np.asarray(basin_grid["node_labels"], dtype=int),
         )
-        basin_result = self.find_attractor_basins_manifold(
-            t,
-            xx,
-            yy,
-            fixed_points=fixed_points,
-            saddle_manifolds=saddle_manifolds,
-        )
-
-        labels = np.asarray(basin_result["labels"], dtype=int)
-        attractor_node_states = self._map_attractors_to_nodes(
-            basin_result["attractors"],
-            basin_labels=labels,
-            x_coords=x_coords,
-            y_coords=y_coords,
-        )
-        basin_states = np.full(xx.shape, -1, dtype=int)
-        for attractor_id, node_state in attractor_node_states.items():
-            basin_states[labels == attractor_id] = node_state
-
-        return x_coords, y_coords, basin_states
 
     @staticmethod
     def _sample_regular_grid(x_grid, y_grid, grid_values, coordinate):
@@ -521,6 +484,8 @@ class Landscape(LandscapePhaseAnalysisBase):
         abs_threshold=0.,
         t_freeze=None,
         basin_grid=None,
+        basin_xx=None,
+        basin_yy=None,
     ):
         """
         Return cell states given cell coordinates. Assignent based on a chosen distance measure, can depend on time or signals.
@@ -529,8 +494,10 @@ class Landscape(LandscapePhaseAnalysisBase):
             (optional, can use the current coordinates stored in landscape)
         :param measure: 'dist' - based on Euclidean distance to Node modules.
             'gaussian' - based on a gaussian mixture model over Node modules, taking into account time-dependent module size.
-            'basin' - based on the current basin of attraction, looked up on an auto-generated rasterized grid.
-            'basin static' - based on a basin grid computed at t_freeze and sampled for the current coordinates.
+            'basin' - based on the current basin of attraction, sampled from a provided basin_grid or built on the
+            explicit basin_xx/basin_yy domain.
+            'basin static' - based on a fixed basin grid, either provided directly or built at t_freeze on the
+            explicit basin_xx/basin_yy domain.
         :return: states - array of length n of ints
         """
         if coordinate is None:
@@ -573,32 +540,40 @@ class Landscape(LandscapePhaseAnalysisBase):
             if abs_threshold == 0:
                 states[zero_rows] = -1
         elif measure == 'basin':
-            if basin_grid is None:
-                basin_grid = self._build_basin_state_grid(t, coordinate)
-            x_coords, y_coords, basin_states = basin_grid
+            x_coords, y_coords, node_labels = self._build_basin_state_grid(
+                t,
+                coordinate,
+                basin_xx=basin_xx,
+                basin_yy=basin_yy,
+                basin_grid=basin_grid,
+            )
             states = self._sample_regular_grid(
                 np.asarray(x_coords, dtype=float),
                 np.asarray(y_coords, dtype=float),
-                np.asarray(basin_states, dtype=int),
+                np.asarray(node_labels, dtype=int),
                 coordinate,
             )
         elif measure == 'basin static' or measure == 'basin_static':
-            if basin_grid is None:
-                if t_freeze is None:
-                    raise ValueError("measure 'basin static' requires t_freeze or a precomputed basin_grid.")
-                basin_grid = self._build_basin_state_grid(t_freeze, coordinate)
-            x_coords, y_coords, basin_states = basin_grid
+            if basin_grid is None and t_freeze is None:
+                raise ValueError("measure 'basin static' requires t_freeze or a precomputed basin_grid.")
+            x_coords, y_coords, node_labels = self._build_basin_state_grid(
+                t_freeze,
+                coordinate,
+                basin_xx=basin_xx,
+                basin_yy=basin_yy,
+                basin_grid=basin_grid,
+            )
             states = self._sample_regular_grid(
                 np.asarray(x_coords, dtype=float),
                 np.asarray(y_coords, dtype=float),
-                np.asarray(basin_states, dtype=int),
+                np.asarray(node_labels, dtype=int),
                 coordinate,
             )
         else:
             raise ValueError("measure must be one of 'dist', 'gaussian', 'basin', 'basin static', or 'basin_static'")
         return states
 
-    def run_cells(self, t0, tf, nt, noise=0., ndt=50, frozen=False, t_freeze=None, get_states=True):
+    def run_cells(self, t0, tf, nt, noise=0., ndt=50, frozen=False, t_freeze=None, get_states=True, basin_grid=None, basin_xx=None, basin_yy=None):
         """
         Run trajectories for cells in the landscape.
         :param t0: float, start time
@@ -609,6 +584,9 @@ class Landscape(LandscapePhaseAnalysisBase):
         :param frozen: bool, whether to fix the landscape paremeters
         :param t_freeze: if frozen, provide the time at which to calculate the landscape, to be kept constant
         :param get_states: bool or str, whether to compute cell states, or which state measure to use
+        :param basin_grid: optional precomputed basin grid with embedded coordinates for basin-based state lookup
+        :param basin_xx: optional explicit x-grid for building basin-based states when basin_grid is not provided
+        :param basin_yy: optional explicit y-grid for building basin-based states when basin_grid is not provided
         :return: traj (array of shape (2, n, nt)) and states (int array of shape (2, nt))
         """
         traj = np.empty((*self.cell_coordinates.shape, nt), dtype='float')
@@ -628,9 +606,15 @@ class Landscape(LandscapePhaseAnalysisBase):
             if (state_measure == 'basin static' or state_measure == 'basin_static') and t_freeze is None:
                 raise ValueError("get_states='basin static' requires t_freeze to be provided.")
             state_basin_grid = (
-                self._build_basin_state_grid(t_freeze, y)
+                self._build_basin_state_grid(
+                    t_freeze,
+                    y,
+                    basin_xx=basin_xx,
+                    basin_yy=basin_yy,
+                    basin_grid=basin_grid,
+                )
                 if state_measure == 'basin static' or state_measure == 'basin_static'
-                else None
+                else basin_grid
             )
             state_time = (
                 t_freeze
@@ -644,6 +628,8 @@ class Landscape(LandscapePhaseAnalysisBase):
                 measure=state_measure,
                 t_freeze=t_freeze,
                 basin_grid=state_basin_grid,
+                basin_xx=basin_xx,
+                basin_yy=basin_yy,
             )
         else:
             state_measure = None
@@ -672,6 +658,8 @@ class Landscape(LandscapePhaseAnalysisBase):
                     measure=state_measure,
                     t_freeze=t_freeze,
                     basin_grid=state_basin_grid,
+                    basin_xx=basin_xx,
+                    basin_yy=basin_yy,
                 )
         if get_states:
             self.cell_states = states[:, -1]

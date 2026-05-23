@@ -1,11 +1,11 @@
-from pathlib import Path
-import os
-import sys
+# from pathlib import Path
+# import os
+# import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".mpl-cache"))
-Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
-sys.path.insert(0, str(ROOT / "src"))
+# ROOT = Path(__file__).resolve().parents[1]
+# os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".mpl-cache"))
+# Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
+# sys.path.insert(0, str(ROOT / "src"))
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,7 +14,7 @@ from evoscape.landscapes import Landscape
 from evoscape.landscape_visuals import (
     plot_attractor_basins_t,
     plot_phase_skeleton_t,
-    plot_phase_skeleton_on_potential_t,
+    # plot_phase_skeleton_on_potential_t,
 )
 from evoscape.modules import Center, Node, UnstableNode
 from evoscape.morphogen_regimes import mr_const
@@ -25,9 +25,9 @@ def build_grid(limit, n_points):
     return np.meshgrid(q, q, indexing="xy")
 
 
-def print_summary(title, fixed_points, basin_result, saddle_manifolds=None):
+def print_summary(title, fixed_points, phase_result, basin_grid, saddle_manifolds=None):
     print(f"\n{title}")
-    print(f"  basin method: {basin_result.get('method', 'unknown')}")
+    print(f"  phase method: {phase_result.get('method', 'unknown')}")
     print(f"  fixed points found: {len(fixed_points['points'])}")
     for idx, point in enumerate(fixed_points["points"]):
         eigvals = np.round(fixed_points["eigenvalues"][idx], 4)
@@ -39,7 +39,8 @@ def print_summary(title, fixed_points, basin_result, saddle_manifolds=None):
     if saddle_manifolds is not None:
         print(f"  saddle manifolds computed: {len(saddle_manifolds['saddles'])}")
 
-    for attractor in basin_result["attractors"]:
+    print(f"  basin labels: {sorted(np.unique(basin_grid['basin_labels']).tolist())}")
+    for attractor in phase_result["attractors"]:
         if attractor["type"] == "fixed_point":
             print(
                 f"    basin {attractor['id']}: fixed point "
@@ -63,30 +64,22 @@ def fixed_point_example():
     landscape = Landscape(modules, A0=0.05, regime=mr_const, n_regimes=1)
     xx, yy = build_grid(3.0, 101)
     fixed_points = landscape.find_fixed_points(0.0, (-3.0, 3.0), (-3.0, 3.0), n_grid=23)
-    basin_result = landscape.find_attractor_basins(
+    phase_result = landscape.find_phase_objects_manifold(
         0.0,
         xx,
         yy,
         fixed_points=fixed_points,
-        method="manifold",
         dt=0.06,
-        n_steps=250,
+        n_steps=600,
         cycle_window=96,
     )
-    saddle_manifolds = landscape.find_saddle_manifolds(
-        0.0,
-        fixed_points=fixed_points,
-        x_range=(-3.0, 3.0),
-        y_range=(-3.0, 3.0),
-        step_size=0.025,
-        n_steps=700,
-        termination_tol=2e-2,
-        velocity_tol=2e-3,
-    )
+    basin_grid = landscape.find_attractor_basins_manifold(phase_result=phase_result)
+    saddle_manifolds = phase_result["saddle_manifolds"]
     print_summary(
         "Example 1: multi-well fixed-point basins",
         fixed_points,
-        basin_result,
+        phase_result,
+        basin_grid,
         saddle_manifolds=saddle_manifolds,
     )
     fig, ax, _ = plot_attractor_basins_t(
@@ -94,9 +87,8 @@ def fixed_point_example():
         xx,
         yy,
         0.0,
-        basin_result=basin_result,
-        fixed_points=fixed_points,
-        saddle_manifolds=saddle_manifolds,
+        phase_result=phase_result,
+        basin_grid=basin_grid,
         show_saddle_manifolds=True,
     )
     # ax.set_title("Multi-well fixed-point basins with saddle manifolds")
@@ -105,9 +97,7 @@ def fixed_point_example():
         xx,
         yy,
         0.0,
-        basin_result=basin_result,
-        fixed_points=fixed_points,
-        saddle_manifolds=saddle_manifolds,
+        phase_result=phase_result,
         show_saddle_manifolds=True,
     )
     # skeleton_ax.set_title("Multi-well phase skeleton")
@@ -150,7 +140,7 @@ def cycle_example():
         termination_tol=2e-2,
         velocity_tol=2e-3,
     )
-    basin_result = landscape.find_attractor_basins_manifold(
+    phase_result = landscape.find_phase_objects_manifold(
         t,
         xx,
         yy,
@@ -162,11 +152,13 @@ def cycle_example():
         vel_tol=2e-3,
         cycle_window=256,
     )
+    basin_grid = landscape.find_attractor_basins_manifold(phase_result=phase_result)
 
     print_summary(
         "Example 2: static cycle basin with saddle manifolds",
         fixed_points,
-        basin_result,
+        phase_result,
+        basin_grid,
         saddle_manifolds=saddle_manifolds,
     )
     fig, ax, _ = plot_attractor_basins_t(
@@ -174,9 +166,8 @@ def cycle_example():
         xx,
         yy,
         t,
-        basin_result=basin_result,
-        fixed_points=fixed_points,
-        saddle_manifolds=saddle_manifolds,
+        phase_result=phase_result,
+        basin_grid=basin_grid,
         show_saddle_manifolds=True,
     )
     # ax.set_title("Static cycle basin with saddle manifolds")
@@ -185,9 +176,7 @@ def cycle_example():
         xx,
         yy,
         t,
-        basin_result=basin_result,
-        fixed_points=fixed_points,
-        saddle_manifolds=saddle_manifolds,
+        phase_result=phase_result,
         show_saddle_manifolds=True,
     )
     # skeleton_ax.set_title("Static cycle phase skeleton")

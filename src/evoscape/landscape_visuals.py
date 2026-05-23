@@ -220,25 +220,27 @@ def _node_colors_and_cmap(landscape, colors=None, include_unassigned=True):
 
 def _phase_plot_colors(
     landscape,
-    basin_result,
+    attractors,
+    basin_grid,
     unresolved_color,
     basin_coloring='attractor',
     module_order_colors=None,
     x_coords=None,
     y_coords=None,
 ):
-    labels = np.asarray(basin_result['labels'], dtype=int)
-    attractors = basin_result['attractors']
+    basin_labels = None if basin_grid is None else np.asarray(basin_grid['basin_labels'], dtype=int)
     basin_coloring = str(basin_coloring).lower()
 
     if basin_coloring == 'attractor':
         cmap = phase_basin_palette(len(attractors), unresolved_color=unresolved_color)
-        norm = BoundaryNorm(np.arange(-0.5, len(attractors) + 1.5), cmap.N)
-        basin_image = labels + 1
         attractor_facecolors = {
             int(attractor['id']): indexed_cmap_color(cmap, int(attractor['id']) + 1)
             for attractor in attractors
         }
+        if basin_labels is None:
+            return None, cmap, None, attractor_facecolors
+        norm = BoundaryNorm(np.arange(-0.5, len(attractors) + 1.5), cmap.N)
+        basin_image = basin_labels + 1
         return basin_image, cmap, norm, attractor_facecolors
 
     if basin_coloring not in ('module', 'node'):
@@ -246,7 +248,7 @@ def _phase_plot_colors(
 
     attractor_module_map = landscape._map_attractors_to_nodes(
         attractors,
-        basin_labels=labels,
+        basin_labels=basin_labels,
         x_coords=x_coords,
         y_coords=y_coords,
     )
@@ -283,9 +285,13 @@ def _phase_plot_colors(
         attractor_color_ids[attractor_id] = len(colors) - 1
         attractor_facecolors[attractor_id] = neutral_color
 
-    basin_image = np.zeros_like(labels, dtype=int)
+    if basin_labels is None:
+        cmap = ListedColormap(colors)
+        return None, cmap, None, attractor_facecolors
+
+    basin_image = np.zeros_like(basin_labels, dtype=int)
     for attractor_id, color_id in attractor_color_ids.items():
-        basin_image[labels == attractor_id] = int(color_id)
+        basin_image[basin_labels == attractor_id] = int(color_id)
 
     cmap = ListedColormap(colors)
     norm = BoundaryNorm(np.arange(-0.5, len(colors) + 0.5), cmap.N)
@@ -391,7 +397,8 @@ def plot_attractor_basins_t(
     xx,
     yy,
     t,
-    basin_result=None,
+    phase_result=None,
+    basin_grid=None,
     fixed_points=None,
     density=0.5,
     streamlines=True,
@@ -407,15 +414,18 @@ def plot_attractor_basins_t(
     stable_manifold_color=stable_manifold_color,
     unstable_manifold_color=unstable_manifold_color,
 ):
-    if basin_result is None:
-        basin_result = landscape.find_attractor_basins(t, xx, yy, fixed_points=fixed_points)
+    if phase_result is None:
+        phase_result = landscape.find_phase_objects_manifold(t, xx, yy, fixed_points=fixed_points)
+    if basin_grid is None:
+        basin_grid = landscape.find_attractor_basins_manifold(phase_result=phase_result)
 
-    attractors = basin_result['attractors']
-    fixed_points = basin_result['fixed_points']
+    attractors = phase_result['attractors']
+    fixed_points = phase_result['fixed_points']
 
     basin_image, cmap, norm, attractor_facecolors = _phase_plot_colors(
         landscape,
-        basin_result,
+        attractors,
+        basin_grid,
         unresolved_color=unresolved_color,
         basin_coloring=basin_coloring,
         module_order_colors=module_order_colors,
@@ -456,12 +466,7 @@ def plot_attractor_basins_t(
             ax.contour(xx, yy, dY, (0,), colors=(outline_color,), linestyles='--', linewidths=1.0, alpha=0.5)
 
     if show_saddle_manifolds and saddle_manifolds is None:
-        saddle_manifolds = landscape.find_saddle_manifolds(
-            t,
-            fixed_points=fixed_points,
-            x_range=(float(np.min(xx)), float(np.max(xx))),
-            y_range=(float(np.min(yy)), float(np.max(yy))),
-        )
+        saddle_manifolds = phase_result['saddle_manifolds']
 
     _plot_phase_overlays(
         ax,
@@ -482,7 +487,7 @@ def plot_attractor_basins_t(
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_aspect('equal')
-    return fig, ax, basin_result
+    return fig, ax, basin_grid
 
 
 def plot_phase_skeleton_t(
@@ -490,7 +495,7 @@ def plot_phase_skeleton_t(
     xx,
     yy,
     t,
-    basin_result=None,
+    phase_result=None,
     fixed_points=None,
     saddle_manifolds=None,
     show_fixed_points=True,
@@ -501,23 +506,20 @@ def plot_phase_skeleton_t(
     module_order_colors=None,
     stable_manifold_color=stable_manifold_color,
     unstable_manifold_color=unstable_manifold_color,
+    saddle_levels=False,
 ):
-    if basin_result is None:
-        basin_result = landscape.find_attractor_basins(t, xx, yy, fixed_points=fixed_points)
+    if phase_result is None:
+        phase_result = landscape.find_phase_objects_manifold(t, xx, yy, fixed_points=fixed_points)
 
-    attractors = basin_result['attractors']
-    fixed_points = basin_result['fixed_points']
-    if show_saddle_manifolds and saddle_manifolds is None:
-        saddle_manifolds = landscape.find_saddle_manifolds(
-            t,
-            fixed_points=fixed_points,
-            x_range=(float(np.min(xx)), float(np.max(xx))),
-            y_range=(float(np.min(yy)), float(np.max(yy))),
-        )
+    attractors = phase_result['attractors']
+    fixed_points = phase_result['fixed_points']
+    if (show_saddle_manifolds or saddle_levels) and saddle_manifolds is None:
+        saddle_manifolds = phase_result['saddle_manifolds']
 
     _, cmap, _, attractor_facecolors = _phase_plot_colors(
         landscape,
-        basin_result,
+        attractors,
+        None,
         unresolved_color=unresolved_color,
         basin_coloring=basin_coloring,
         module_order_colors=module_order_colors,
@@ -526,6 +528,27 @@ def plot_phase_skeleton_t(
     )
     fig, ax = plt.subplots(1, 1, figsize=(6, 6), facecolor=figure_face_color)
     ax.set_facecolor(axes_face_color)
+
+    if saddle_levels and saddle_manifolds is not None:
+        saddle_indices = [
+            int(saddle['fixed_point_index'])
+            for saddle in saddle_manifolds.get('saddles', ())
+            if saddle.get('fixed_point_index') is not None
+        ]
+        if saddle_indices:
+            saddle_indices = np.asarray(saddle_indices, dtype=int)
+            saddle_points = np.asarray(fixed_points['points'], dtype=float)[saddle_indices]
+            _, saddle_potential, _ = landscape(
+                t,
+                (saddle_points[:, 0], saddle_points[:, 1]),
+                return_potentials=True,
+            )
+            _, potential, _ = landscape(t, (xx, yy), return_potentials=True)
+            contour = plt.contour(xx, yy, potential, levels=np.unique(saddle_potential), alpha=0)
+            for level_segments in contour.allsegs:
+                for segment in level_segments:
+                    if len(segment) >= 2:
+                        ax.plot(segment[:, 0], segment[:, 1], color='#9CAF88', linewidth=2.6, zorder=4)
 
     _plot_phase_overlays(
         ax,
@@ -545,7 +568,7 @@ def plot_phase_skeleton_t(
     ax.set_ylim(np.min(yy), np.max(yy))
     ax.set_aspect('equal')
     ax.set_axis_off()
-    return fig, ax, basin_result
+    return fig, ax, phase_result
 
 
 # def plot_phase_skeleton_on_potential_t(
@@ -877,7 +900,7 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
 
 def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp_types', elev=None, azim=None, offset=2,
                         cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True,
-                        basin_result=None, show_saddle_manifolds=False):
+                        phase_result=None, show_saddle_manifolds=False, saddle_levels=False):
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
     # circles = []
     fig, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(6, 6))
@@ -935,24 +958,19 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
                         left = base + arrow_size * (perp_vector * 0.4 - direction)
                         right = base + arrow_size * (-perp_vector * 0.4 - direction)
                         ax.plot(*zip(left, base, right), color=line_color, linewidth=1.5, zorder=100)
-    if basin_result:
+    if phase_result:
         show_saddle_manifolds = True
-    if show_saddle_manifolds:
+    if show_saddle_manifolds or saddle_levels:
         z_lift = 0
 
-        if basin_result is None:
-            basin_result = landscape.find_attractor_basins(
+        if phase_result is None:
+            phase_result = landscape.find_phase_objects_manifold(
                 t,
                 xx,
                 yy,
             )
-        fixed_points = basin_result.get('fixed_points')
-        saddle_manifolds = landscape.find_saddle_manifolds(
-            t,
-            fixed_points=fixed_points,
-            x_range=(float(np.min(xx)), float(np.max(xx))),
-            y_range=(float(np.min(yy)), float(np.max(yy))),
-        )
+        fixed_points = phase_result.get('fixed_points')
+        saddle_manifolds = phase_result.get('saddle_manifolds')
         _plot_saddle_manifolds_3d(
             ax,
             landscape,
@@ -965,7 +983,7 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
         )
         attractor_indices = [
             int(attractor['fixed_point_index'])
-            for attractor in basin_result.get('attractors', ())
+            for attractor in phase_result.get('attractors', ())
             if attractor.get('type') == 'fixed_point' and attractor.get('fixed_point_index') is not None
         ]
         if attractor_indices:
@@ -988,6 +1006,46 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
                 # edgecolor=None,
                 zorder=120,
                 # depthshade=False,
+            )
+
+        saddle_indices = [
+            int(saddle['fixed_point_index'])
+            for saddle in saddle_manifolds.get('saddles', ())
+            if saddle.get('fixed_point_index') is not None
+        ]
+        if saddle_indices:
+            saddle_indices = np.asarray(saddle_indices, dtype=int)
+            saddle_points = np.asarray(fixed_points['points'], dtype=float)[saddle_indices]
+            _, potential_values, rot_values = landscape(
+                t,
+                (saddle_points[:, 0], saddle_points[:, 1]),
+                return_potentials=True,
+            )
+            saddle_z = np.asarray(rot_values if rot else potential_values, dtype=float) + z_lift
+            if saddle_levels:
+                contour = plt.contour(xx, yy, potential, levels=np.unique(saddle_z - z_lift), alpha=0)
+                for level_value, level_segments in zip(contour.levels, contour.allsegs):
+                    for segment in level_segments:
+                        if len(segment) < 2:
+                            continue
+                        ax.plot(
+                            segment[:, 0],
+                            segment[:, 1],
+                            np.full(len(segment), level_value + z_lift),
+                            color='w',
+                            linewidth=1.2,
+                            zorder=115,
+                        )
+            ax.plot(
+                saddle_points[:, 0],
+                saddle_points[:, 1],
+                saddle_z,
+                markersize=4,
+                markeredgewidth=2.6,
+                lw=0,
+                color='w',
+                marker='x',
+                zorder=120,
             )
 
     if scatter:
@@ -1097,6 +1155,8 @@ def plot_cells(landscape, L, colors=None):
 def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, s=6, frozen=False, t_freeze=None,
                       state_measure='gaussian', state_colors=None, state_names=None, t_ticks=None, t_names=None):
     """ Integrate trajectories for cells and visualize in 2 panels: colored by time and by cell state. """
+    basin_q = np.linspace(-L, L, 201)
+    basin_xx, basin_yy = np.meshgrid(basin_q, basin_q, indexing='xy')
     traj, states = landscape.run_cells(
         t0,
         tf,
@@ -1106,6 +1166,8 @@ def get_and_plot_traj(landscape, t0, tf, nt, L, noise, ndt=50, s=6, frozen=False
         frozen=frozen,
         t_freeze=t_freeze,
         get_states=state_measure,
+        basin_xx=basin_xx,
+        basin_yy=basin_yy,
     )
 
     fig = plt.figure(figsize=(9, 5))
