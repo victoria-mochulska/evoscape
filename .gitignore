@@ -22,3 +22,5 @@ dist/
 .idea/
 src/saved_files/
 src/evoscape/landscapes/other/
+/data
+/temp
