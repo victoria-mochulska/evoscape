@@ -127,8 +127,14 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
             else:
                 fill = True
                 lw = 0
-            circle_patches.append(plt.Circle((module.x, module.y), 1.18 * float(sig), color=color,
-                                  fill=fill, alpha=circle_opacity * np.sqrt(float(np.abs(A))), clip_on=True, linewidth=lw))
+            
+            # sig and A are arrays with a single value. 
+            # with numpy 2.0, we can't take the float of an array, so we extract the value first
+
+            sig_val = float(np.atleast_1d(sig).squeeze())
+            A_val = float(np.atleast_1d(A).squeeze())
+            circle_patches.append(plt.Circle((module.x, module.y), 1.18 * float(sig_val), color=color,
+                                  fill=fill, alpha=circle_opacity * np.sqrt(float(np.abs(A_val))), clip_on=True, linewidth=lw))
     (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
 
     fig, stream_ax = plt.subplots(1, 1, figsize=(5, 5))
