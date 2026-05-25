@@ -33,4 +33,4 @@ def make_movie_landscape(dynamics, static, xx, yy, n_frames):
         fig.savefig(buf, format='png')
         buf.seek(0)
         frames.append(imageio.imread(buf))
-    imageio.mimsave("../figures/animation.gif", frames, duration=10.)
+    imageio.mimsave("../temp/figures/animation.gif", frames, duration=10.)

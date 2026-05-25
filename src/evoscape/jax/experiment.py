@@ -45,11 +45,11 @@ class Experiment:
         self.signal_param = signal_param
         self.regime = wrapped_regime(self.static, self.signal_param)
 
-    def set_simulation(self, n: int, cell_noise: float, t0: float, tf: float, nt: int, ndt: int, noise: float):
+    def set_simulation(self, n: int, init_noise: float, t0: float, tf: float, nt: int, ndt: int, noise: float):
         """Simulation parameters passed to integrate."""
         self.sim_params = dict(
             n=n,
-            cell_noise=cell_noise,
+            init_noise=init_noise,
             t0=t0,
             tf=tf,
             nt=nt,
@@ -97,7 +97,8 @@ class Experiment:
         key = self.get_key()
 
         p = self.sim_params
-
+        n =p["n"]
+        init_noise = p["init_noise"]
         t0 = p["t0"]
         tf = p["tf"]
         nt = p["nt"]
@@ -107,10 +108,10 @@ class Experiment:
         q_init = self.q_init
         if q_init is None:
             q_init = jnp.asarray(self.dynamic.init_cond)[:, None]
-
+        key, q_noisy = init_cell(key,n,q_init,init_noise)
         _, traj, states = _integrate(
             key,
-            q_init,
+            q_noisy,
             t0,
             tf,
             nt,
@@ -137,7 +138,7 @@ class Experiment:
         p = self.sim_params
 
         n =p["n"]
-        cell_noise = p["cell_noise"]
+        init_noise = p["init_noise"]
         t0 = p["t0"]
         tf = p["tf"]
         nt = p["nt"]
@@ -149,7 +150,7 @@ class Experiment:
             q_init = jnp.asarray(self.static.init_cond)[:, None]
 
         def loss_fn(dynamic, subkey):
-            subkey, q_noisy = init_cell(subkey,n,q_init,cell_noise)
+            subkey, q_noisy = init_cell(subkey,n,q_init,init_noise)
             _, traj, states = _integrate(
                 subkey,
                 q_noisy,
@@ -170,7 +171,7 @@ class Experiment:
         self.dynamic = dynamic_vals[-1]
 
         key = self.get_key()
-        key, q_noisy = init_cell(key,n,q_init,cell_noise)
+        key, q_noisy = init_cell(key,n,q_init,init_noise)
 
         _, traj, states = _integrate(
             key,

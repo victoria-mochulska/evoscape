@@ -101,8 +101,8 @@ class Module:
         :return: V - volume, s_t - size at time t, a_t - amplitude at time t
         """
         if self.a.size == 1 and self.s.size == 1:
-            V = float(self.a) * float(self.s) ** 2
-            return V, float(self.s), float(self.a)
+            V = self.a.item() * self.s.item() ** 2
+            return V, self.s.item(), self.a.item()
 
         s_t, a_t = regime(t, self.a, self.s, t0=t0, t1=t1, t2=t2, t3=t3, t4=t4, tau=self.tau)
         V = a_t * s_t ** 2
