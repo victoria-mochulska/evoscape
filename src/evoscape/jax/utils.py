@@ -1,9 +1,11 @@
 import jax.random as jrd
 import jax.numpy as jnp
+import jax.image as jimg
 import imageio.v2 as imageio
 import matplotlib.pyplot as plt
 import io
 import numpy as np
+from jax import jit, vmap
 from evoscape.landscape_visuals import visualize_landscape
 from evoscape.jax.converters import pytree_to_landscape
 
@@ -34,3 +36,7 @@ def make_movie_landscape(dynamics, static, xx, yy, n_frames):
         buf.seek(0)
         frames.append(imageio.imread(buf))
     imageio.mimsave("../temp/figures/animation.gif", frames, duration=10.)
+
+@jit
+def rescale(A, N, T):
+    return vmap(lambda x: jimg.resize(x, (N, T), method="linear"))(A)

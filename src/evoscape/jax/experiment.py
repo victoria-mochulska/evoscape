@@ -175,7 +175,7 @@ class Experiment:
 
         _, traj, states = _integrate(
             key,
-            q_init,
+            q_noisy,
             t0,
             tf,
             nt,
