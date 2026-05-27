@@ -14,7 +14,7 @@ def init_cell(key, n, init_cond, noise):
 
 
 # Base flow function to work with
-@jit
+# @jit
 def _flow(q_flat, xs, ys, sig, a, Js, A0, x0):
     x, y = q_flat
     xr = x[None] - xs[:, None]
@@ -33,7 +33,7 @@ def _flow(q_flat, xs, ys, sig, a, Js, A0, x0):
 
 
 # Function to compute a and s for a given time t and a given regime
-@partial(jit, static_argnames=("regime",))
+# @partial(jit, static_argnames=("regime",))
 def get_current_par(t, dynamic, regime):
     a = dynamic.module.a
     s = dynamic.module.s
@@ -46,7 +46,7 @@ def get_current_par(t, dynamic, regime):
 
 
 # Get_flow depending on time: the use of get_current_par is recquired !
-@partial(jit, static_argnames=("regime",))
+# @partial(jit, static_argnames=("regime",))
 def get_flow(t, coordinate, dynamic, static, regime):
     a0 = static.A0
     xs = dynamic.module.x
@@ -58,7 +58,7 @@ def get_flow(t, coordinate, dynamic, static, regime):
 
 
 # Base integration function to work with
-@partial(jit, static_argnames=("nt", "ndt", "get_states", "regime"))
+# @partial(jit, static_argnames=("nt", "ndt", "get_states", "regime"))
 def _integrate(key, y0, t0, tf, nt, ndt, noise, dynamic, static, regime, get_states):
     dt = (tf - t0) / (nt - 1) / ndt
     sqrt_dt = jnp.sqrt(dt)
@@ -88,7 +88,7 @@ def _integrate(key, y0, t0, tf, nt, ndt, noise, dynamic, static, regime, get_sta
 
 
 # Definition of get_states with integration of regime function which was previously defined.
-@partial(jit, static_argnames=("measure", "prob_threshold", "abs_threshold", "regime"))
+# @partial(jit, static_argnames=("measure", "prob_threshold", "abs_threshold", "regime"))
 def get_cell_states(t, coordinate, dynamic, static, regime, measure="gaussian", prob_threshold=0.0, abs_threshold=0.0):
     """
     Return cell states given cell coordinates. Assignent based on a chosen distance measure, can depend on time or signals.
@@ -129,7 +129,7 @@ def get_cell_states(t, coordinate, dynamic, static, regime, measure="gaussian", 
 
 
 #  Check/update
-@partial(jit, static_argnames=("regime",))
+# @partial(jit, static_argnames=("regime",))
 def state_probs(t, coordinate, dynamic, static, regime):
     _, st, at = get_current_par(t, dynamic, regime)
     dist = jnp.sum(
@@ -152,7 +152,7 @@ def state_probs(t, coordinate, dynamic, static, regime):
 
 
 #
-@partial(jit, static_argnames=("regime",))
+# @partial(jit, static_argnames=("regime",))
 def compute_potentials(t, q, dynamic, static, regime):
     q = jnp.asarray(q)
     grid_shape = q.shape[1:]
