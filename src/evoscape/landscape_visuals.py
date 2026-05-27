@@ -9,20 +9,13 @@ from matplotlib.gridspec import GridSpec
 import imageio.v2 as imageio
 
 from .morphogen_regimes import mr_current_regime
-from . import landscape_visuals_config as visuals_config
 from .landscape_visuals_config import (
     figure_dpi,
-    figure_face_color,
-    axes_face_color,
     streamline_color,
     basin_streamline_color,
-    outline_color,
     surface_contour_color,
     neutral_color,
     unresolved_basin_color,
-    unassigned_fixed_point_face_color,
-    projection_contour_color,
-    transparent_pane_color,
     trajectory_color,
     stable_manifold_color,
     unstable_manifold_color,
@@ -44,7 +37,9 @@ from .landscape_visuals_config import (
     indexed_cmap_color,
 )
 
-plt.rcParams.update({'figure.dpi': figure_dpi})  # Change to 200 for high res figures, 100 for normal
+
+def update_params():
+    plt.rcParams.update({"figure.dpi": figure_dpi})
 # __________________________________________________________________________________________________
 
 # def sync_order_colors_from_config():
@@ -108,8 +103,8 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', draw
 
     stream_ax.streamplot(xx, yy, dX, dY, density=density, arrowsize=2., arrowstyle='->', linewidth=1,
                          color=streamline_color)
-    stream_ax.contour(xx, yy, dX, (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
-    stream_ax.contour(xx, yy, dY, (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
+    stream_ax.contour(xx, yy, dX, (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
+    stream_ax.contour(xx, yy, dY, (0,), colors=('k',), linestyles='--', linewidths=1.5, alpha=0.7)
 
     stream_ax.set_xlim([np.min(xx), np.max(xx)])
     stream_ax.set_ylim([np.min(yy), np.max(yy)])
@@ -167,8 +162,8 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
     stream_ax.streamplot(xx, yy, dX, dY, density=density, arrowsize=2., arrowstyle='->', linewidth=1,
                          color=streamline_color, start_points=start_points)
     if nullclines:
-        stream_ax.contour(xx, yy, dX, (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
-        stream_ax.contour(xx, yy, dY, (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
+        stream_ax.contour(xx, yy, dX, (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
+        stream_ax.contour(xx, yy, dY, (0,), colors=('k',), linestyles='--', linewidths=1.5, alpha=0.7)
 
     if traj_times is not None:
         landscape.init_cells(1, traj_init_cond, noise=0.)
@@ -374,11 +369,11 @@ def _plot_phase_overlays(
             if idx in fixed_label_map:
                 attractor_id = fixed_label_map[idx]
                 facecolor = attractor_facecolors.get(int(attractor_id), indexed_cmap_color(cmap, int(attractor_id) + 1))
-                edgecolor = outline_color
+                edgecolor = 'k'
                 size = 150 #82
             else:
-                facecolor = unassigned_fixed_point_face_color
-                edgecolor = outline_color
+                facecolor = 'white'
+                edgecolor = 'k'
                 size = 120 # 72
             ax.scatter(
                 point[0],
@@ -462,8 +457,8 @@ def plot_attractor_basins_t(
                 color=basin_streamline_color,
             )
         if draw_nullclines:
-            ax.contour(xx, yy, dX, (0,), colors=(outline_color,), linestyles='-', linewidths=1.0, alpha=0.5)
-            ax.contour(xx, yy, dY, (0,), colors=(outline_color,), linestyles='--', linewidths=1.0, alpha=0.5)
+            ax.contour(xx, yy, dX, (0,), colors=('k',), linestyles='-', linewidths=1.0, alpha=0.5)
+            ax.contour(xx, yy, dY, (0,), colors=('k',), linestyles='--', linewidths=1.0, alpha=0.5)
 
     if show_saddle_manifolds and saddle_manifolds is None:
         saddle_manifolds = phase_result['saddle_manifolds']
@@ -526,8 +521,7 @@ def plot_phase_skeleton_t(
         x_coords=np.asarray(xx[0], dtype=float),
         y_coords=np.asarray(yy[:, 0], dtype=float),
     )
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6), facecolor=figure_face_color)
-    ax.set_facecolor(axes_face_color)
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
 
     if saddle_levels and saddle_manifolds is not None:
         saddle_indices = [
@@ -875,10 +869,10 @@ def visualize_all(landscape, xx, yy, times, density=0.5, color_scheme='fp_types'
                              color=streamline_color)
 
         if plot_nullclines:
-            circles_ax.contour(xx, yy, dX[it], (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
-            circles_ax.contour(xx, yy, dY[it], (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
-            stream_ax.contour(xx, yy, dX[it], (0,), colors=(outline_color,), linestyles='-', linewidths=1.5, alpha=0.7)
-            stream_ax.contour(xx, yy, dY[it], (0,), colors=(outline_color,), linestyles='--', linewidths=1.5, alpha=0.7)
+            circles_ax.contour(xx, yy, dX[it], (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
+            circles_ax.contour(xx, yy, dY[it], (0,), colors=('k',), linestyles='--', linewidths=1.5, alpha=0.7)
+            stream_ax.contour(xx, yy, dX[it], (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
+            stream_ax.contour(xx, yy, dY[it], (0,), colors=('k',), linestyles='--', linewidths=1.5, alpha=0.7)
 
         if plot_traj:
             # calculate a trajectory in frozen landscape
@@ -1065,11 +1059,11 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
 
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.zaxis.set_tick_params(color=axes_face_color)
+    ax.zaxis.set_tick_params(color='white')
     ax.set_zticklabels([])
-    ax.xaxis.set_pane_color(transparent_pane_color)
-    ax.yaxis.set_pane_color(transparent_pane_color)
-    ax.zaxis.set_pane_color(transparent_pane_color)
+    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
 
     # plt.tight_layout()
     if not axes:

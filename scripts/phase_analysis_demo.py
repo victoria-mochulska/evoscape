@@ -10,12 +10,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+import evoscape.landscape_visuals as vis
 from evoscape.landscapes import Landscape
-from evoscape.landscape_visuals import (
-    plot_attractor_basins_t,
-    plot_phase_skeleton_t,
-    # plot_phase_skeleton_on_potential_t,
-)
 from evoscape.modules import Center, Node, UnstableNode
 from evoscape.morphogen_regimes import mr_const
 
@@ -82,7 +78,7 @@ def fixed_point_example():
         basin_grid,
         saddle_manifolds=saddle_manifolds,
     )
-    fig, ax, _ = plot_attractor_basins_t(
+    fig, ax, _ = vis.plot_attractor_basins_t(
         landscape,
         xx,
         yy,
@@ -92,7 +88,7 @@ def fixed_point_example():
         show_saddle_manifolds=True,
     )
     # ax.set_title("Multi-well fixed-point basins with saddle manifolds")
-    skeleton_fig, skeleton_ax, _ = plot_phase_skeleton_t(
+    skeleton_fig, skeleton_ax, _ = vis.plot_phase_skeleton_t(
         landscape,
         xx,
         yy,
@@ -161,7 +157,7 @@ def cycle_example():
         basin_grid,
         saddle_manifolds=saddle_manifolds,
     )
-    fig, ax, _ = plot_attractor_basins_t(
+    fig, ax, _ = vis.plot_attractor_basins_t(
         landscape,
         xx,
         yy,
@@ -171,7 +167,7 @@ def cycle_example():
         show_saddle_manifolds=True,
     )
     # ax.set_title("Static cycle basin with saddle manifolds")
-    skeleton_fig, skeleton_ax, _ = plot_phase_skeleton_t(
+    skeleton_fig, skeleton_ax, _ = vis.plot_phase_skeleton_t(
         landscape,
         xx,
         yy,
@@ -198,6 +194,7 @@ def cycle_example():
 
 
 def main():
+    vis.update_params()
     plt.style.use("default")
     plt.rcParams.update({"figure.dpi": 120})
 

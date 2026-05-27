@@ -7,18 +7,11 @@ from matplotlib.colors import BoundaryNorm, ListedColormap, to_rgb, to_rgba
 
 figure_dpi = 100
 
-figure_face_color = 'white'
-axes_face_color = 'white'
 streamline_color = 'grey'
 basin_streamline_color = 'k'
-outline_color = 'k'
 surface_contour_color = 'w'
 neutral_color = 'grey'
 unresolved_basin_color = 'lightgrey'
-unassigned_fixed_point_face_color = 'white'
-projection_contour_color = '0.6'
-transparent_pane_color = (1.0, 1.0, 1.0, 0.0)
-
 trajectory_color = 'forestgreen'
 stable_manifold_color = '#2f5aa6'
 unstable_manifold_color = '#a34747'
@@ -45,6 +38,14 @@ cmap_time = 'viridis'
 cmap_cells = scm.lipari
 
 phase_basin_cmap_name = 'Pastel1'
+potential_surface_cmap = scm.cork.reversed()
+rotational_surface_cmap = 'RdBu_r'
+velocity_cmap = 'Greys'
+
+cycle_line_lightness_floor = 0.35
+cycle_line_lightness_scale = 0.0
+cycle_line_saturation_scale = 1.
+
 
 def lighten_colors(colors, amount=0.4):
     white = np.ones(3, dtype=float)
@@ -86,10 +87,4 @@ def phase_basin_palette(n_colors, unresolved_color=unresolved_basin_color):
     return ListedColormap(colors)
 
 
-potential_surface_cmap = scm.cork.reversed()
-rotational_surface_cmap = 'RdBu_r'
-velocity_cmap = 'Greys'
 
-cycle_line_lightness_floor = 0.35
-cycle_line_lightness_scale = 0.0
-cycle_line_saturation_scale = 1.
