@@ -8,7 +8,7 @@ from jax.scipy.special import kl_div, entr
 from .dynamics import _integrate, init_cell
 from .types import LandscapeDynamic, LandscapeStatic
 
-
+from .utils import rescale
 # Here is different fitness functions to choose from
 
 def origin_leading_fitness(traj, states, dynamic: LandscapeDynamic, loss_params=None):
@@ -41,3 +41,17 @@ def biseparating_fitness(traj, states, dynamic: LandscapeDynamic, loss_params=No
         mu * loss_uniform + lam* loss_particle
     )
 
+# Faut jiter ?
+def drosophile_fitness(traj, states, decoded_traj, dynamic, decoder, data, fitness_params):
+    #traj of shape (2,n,nt)
+    #states of shape(n_module,n,nt)
+    #decoded_traj of shape (4,n,nt)
+    #data of shape (4,N,T)
+    mu, lam = fitness_params
+    decoded_traj = rescale(decoded_traj,data.shape[1],data.shape[2])
+    loss_traj = jnp.mean((decoded_traj-traj)**2)
+    loss_line = jnp.mean(jnp.sum(jnp.diff(traj[:,:,0],axis=1),axis=0))
+
+    return (mu*loss_traj + lam*loss_line
+    #+rho*loss_encoder_decoder    
+    ) 

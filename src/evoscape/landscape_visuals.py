@@ -50,8 +50,8 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', draw
     if draw_circles:
         for i, module in enumerate(landscape.module_list):
             if module.a.size == 1 and module.s.size == 1 and regime == 0:
-                sig = float(module.s)
-                A = float(module.a)
+                sig = module.s.item()
+                A = module.a.item()
             else:
                 sig = module.s[regime]
                 A = module.a[regime]
@@ -130,11 +130,8 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
             
             # sig and A are arrays with a single value. 
             # with numpy 2.0, we can't take the float of an array, so we extract the value first
-
-            sig_val = float(np.atleast_1d(sig).squeeze())
-            A_val = float(np.atleast_1d(A).squeeze())
-            circle_patches.append(plt.Circle((module.x, module.y), 1.18 * float(sig_val), color=color,
-                                  fill=fill, alpha=circle_opacity * np.sqrt(float(np.abs(A_val))), clip_on=True, linewidth=lw))
+            circle_patches.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
+                                  fill=fill, alpha=circle_opacity * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
     (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
 
     fig, stream_ax = plt.subplots(1, 1, figsize=(5, 5))
