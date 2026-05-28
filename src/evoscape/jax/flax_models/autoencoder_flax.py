@@ -1,6 +1,6 @@
 from flax import nnx
 import jax.numpy as jnp
-from ..landscape_flax import LandscapeFlax
+from .landscape_flax import LandscapeFlax
 from .mlp import MLP
 
 

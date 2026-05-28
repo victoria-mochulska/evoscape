@@ -5,10 +5,10 @@ from flax import nnx
 import jax.numpy as jnp
 import jax.random as jrd
 
-from .converters import landscape_to_pytree, pytree_to_landscape
-from .dynamics import _integrate
-from .regimes import wrapped_regime
-from .types import LandscapeDynamic, ModuleDynamic
+from ..converters import landscape_to_pytree, pytree_to_landscape
+from ..dynamics import _integrate
+from ..regimes import wrapped_regime
+from ..types import LandscapeDynamic, ModuleDynamic
 
 
 # LandscapeDynamic and ModuleDynamic as flax classes

@@ -81,6 +81,10 @@ class Decoder(Experiment):
         opt_dynamic=optax.adam(0.1), 
         opt_decoder=optax.adam(0.1)
     ):
+        """
+        data : array of size (nb_genes, cell number, instant t_i)
+            For example (4, 200, 50) means there are four genes, 200 cells and 50 timepoints
+        """
 
         key = self.rngs.default()
 
