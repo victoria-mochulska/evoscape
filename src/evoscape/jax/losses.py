@@ -1,7 +1,7 @@
 from functools import partial
+from typing import Callable
 
 import jax.numpy as jnp
-
 from jax import jit
 from jax.scipy.special import kl_div, entr
 
@@ -9,7 +9,9 @@ from .dynamics import _integrate, init_cell
 from .types import LandscapeDynamic, LandscapeStatic
 
 from .utils import rescale
-# Here is different fitness functions to choose from
+
+
+# Here are different fitness functions to choose from
 
 def origin_leading_fitness(traj, states, dynamic: LandscapeDynamic, loss_params=None):
     return jnp.sum(traj[:, :, -1] ** 2, axis=(0, 1))
@@ -55,3 +57,66 @@ def drosophile_fitness(traj, states, decoded_traj, dynamic, decoder, data, fitne
     return (mu*loss_traj + lam*loss_line
     #+rho*loss_encoder_decoder    
     ) 
+
+
+# ==========================================================
+# Loss to compare point clouds
+# ==========================================================
+ 
+ 
+# Kernels
+
+def rbf_kernel(X: jnp.ndarray, Y: jnp.ndarray, bandwidth: float = 1.0) -> jnp.ndarray:
+    """RBF kernel (Gaussian) : k(x,y) = exp(-||x-y||² / (2σ²))."""
+    # X : (n, d), Y : (m, d) 
+    # returns : (n, m)
+    diff = X[:, None, :] - Y[None, :, :]          # (n, m, d)
+    sq_dist = jnp.sum(diff ** 2, axis=-1)          # (n, m)
+    return jnp.exp(-sq_dist / (2.0 * bandwidth ** 2))
+ 
+ 
+def multiscale_rbf_kernel(
+    X: jnp.ndarray,
+    Y: jnp.ndarray,
+    bandwidths: tuple = (0.5, 1.0, 2.0, 5.0),
+) -> jnp.ndarray:
+    """Sum of RBF kernels with multiple scales"""
+    diff = X[:, None, :] - Y[None, :, :]
+    sq_dist = jnp.sum(diff ** 2, axis=-1)
+    K = sum(jnp.exp(-sq_dist / (2.0 * bw ** 2)) for bw in bandwidths)
+    return K / len(bandwidths)
+ 
+
+def linear_kernel(X: jnp.ndarray, Y: jnp.ndarray) -> jnp.ndarray:
+    """linear kernel : k(x,y) = <x,y>."""
+    return X @ Y.T
+ 
+ 
+# ---------------------------------------------------------------------------
+# Biased mmd
+# ---------------------------------------------------------------------------
+ 
+def mmd(
+    X: jnp.ndarray,
+    Y: jnp.ndarray,
+    kernel: Callable = rbf_kernel,
+    **kernel_kwargs,
+) -> jnp.ndarray:
+    """
+    MMD²(X,Y) = E[k(x,x')] - 2 E[k(x,y)] + E[k(y,y')]
+ 
+    Args:
+        X : (n, d) — samples from P
+        Y : (m, d) — samples from Q
+        kernel : kernel function
+        **kernel_kwargs : kernel parameters
+ 
+    Returns:
+        mmd2 : float (MMD²)
+    """
+    K_XX = kernel(X, X, **kernel_kwargs)
+    K_YY = kernel(Y, Y, **kernel_kwargs)
+    K_XY = kernel(X, Y, **kernel_kwargs)
+ 
+    mmd2 = K_XX.mean() - 2.0 * K_XY.mean() + K_YY.mean()
+    return mmd2
