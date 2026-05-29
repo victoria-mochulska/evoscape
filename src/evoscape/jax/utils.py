@@ -5,6 +5,7 @@ import imageio.v2 as imageio
 import matplotlib.pyplot as plt
 import io
 import numpy as np
+import pandas as pd
 from jax import jit, vmap
 from evoscape.landscape_visuals import visualize_landscape
 from evoscape.jax.converters import pytree_to_landscape
@@ -40,3 +41,47 @@ def make_movie_landscape(dynamics, static, xx, yy, n_frames):
 @jit
 def rescale(A, N, T):
     return vmap(lambda x: jimg.resize(x, (N, T), method="linear"))(A)
+
+def get_drosophile_data(pathfile):
+    df =pd.read_csv(pathfile, sep =",")
+    #Hardcoded 
+    data = np.zeros((4,930,291))
+    for _, row in df.iterrows():
+        t = row["time"]
+        x = row["x"]
+        data[0][x][t] = row["Gt_data"]
+        data[1][x][t] = row["Kni_data"]
+        data[2][x][t] = row["Hb_data"]
+        data[3][x][t] = row["Kr_data"]
+    
+    return jnp.array(data)
+
+def get_facs_data(pathfile_to_conditioned_facs_data):
+    df =pd.read_csv(pathfile_to_conditioned_facs_data, sep =",")
+    
+    genes = ["TBX6", "BRA", "CDX2", "SOX2", "SOX1"]
+
+    df = df.sort_values("timepoint").reset_index(drop=True)
+
+    n_time = df["timepoint"].nunique()
+
+    n_genes = 5
+
+    n_cells = 72000
+
+    values = df[genes].to_numpy()
+
+    # (cells, time, genes)
+    values = values.reshape(n_cells, n_time, n_genes)
+
+    # (genes, cells, time)
+    values = np.transpose(values, (2, 0, 1))
+
+    x = jnp.array(values)
+
+    return x
+
+
+
+    
+

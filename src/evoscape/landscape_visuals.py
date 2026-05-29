@@ -130,6 +130,10 @@ def visualize_landscape_t(landscape, xx, yy, t, color_scheme='fp_types', circles
             
             # sig and A are arrays with a single value. 
             # with numpy 2.0, we can't take the float of an array, so we extract the value first
+            if not isinstance(sig,float):
+                sig = sig.item()
+            if not isinstance(A,float):
+                A = A.item()
             circle_patches.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
                                   fill=fill, alpha=circle_opacity * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
     (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
