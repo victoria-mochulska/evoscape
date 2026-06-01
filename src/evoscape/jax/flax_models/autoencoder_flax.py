@@ -21,7 +21,7 @@ class AutoEncoder(nnx.Module):
         self.landscape_flax = landscape_flax
         self.decoder = MLP(dims_decoder, rngs)
 
-        self.rngs = rngs
+        # self.rngs = rngs
 
 
     def __call__(self, q_init):
@@ -45,6 +45,40 @@ class AutoEncoder(nnx.Module):
         )
 
         traj_decoded = vdecoder(traj) # (d, n, nt)
+
+        return traj_decoded
+    
+    def forward_no_dynamics(self, traj):
+        """
+        simple function that takes a trajectory and encodes it then decodes it without any notion of dynamics
+        (our autoencoder should at least work like an usual autoencoder)
+        traj : array (d, n, nt)
+
+        """
+
+        vencoder = nnx.vmap(
+                nnx.vmap(
+                    lambda x : self.encoder(x),
+                    in_axes=1,
+                    out_axes=1
+                ),
+                in_axes=2,
+                out_axes=2
+        )
+
+        traj_encoded = vencoder(traj) # (2, n, nt)
+
+        vdecoder = nnx.vmap(
+                nnx.vmap(
+                    lambda x : self.decoder(x),
+                    in_axes=1,
+                    out_axes=1
+                ),
+                in_axes=2,
+                out_axes=2
+        )
+
+        traj_decoded = vdecoder(traj_encoded) # (d, n, nt)
 
         return traj_decoded
 
