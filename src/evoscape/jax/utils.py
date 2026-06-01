@@ -63,23 +63,23 @@ def get_facs_data(pathfile_to_conditioned_facs_data):
 
     df = df.sort_values("timepoint").reset_index(drop=True)
 
+    unique_timepoints = np.sort(df["timepoint"].unique())
+
     n_time = df["timepoint"].nunique()
 
     n_genes = 5
 
-    n_cells = 72000
-
     values = df[genes].to_numpy()
 
     # (cells, time, genes)
-    values = values.reshape(n_cells, n_time, n_genes)
+    values = values.reshape(-1, n_time, n_genes)
 
     # (genes, cells, time)
     values = np.transpose(values, (2, 0, 1))
 
     x = jnp.array(values)
 
-    return x
+    return x, unique_timepoints
 
 
 
