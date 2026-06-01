@@ -2,7 +2,7 @@ from functools import partial
 from typing import Callable
 
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, vmap
 from jax.scipy.special import kl_div, entr
 
 from .dynamics import _integrate, init_cell
@@ -120,3 +120,24 @@ def mmd(
  
     mmd2 = K_XX.mean() - 2.0 * K_XY.mean() + K_YY.mean()
     return mmd2
+
+def mmd_traj(
+    model_traj: jnp.ndarray,
+    target_traj: jnp.ndarray,
+    kernel: Callable = rbf_kernel,
+    **kernel_kwargs,
+) -> jnp.ndarray:
+    """
+    model_traj : array (d, n_cells, timepoints)
+    target_traj : array (d, n_cells, timepoints)
+
+    we need to apply mmd to each sub array of size (d, n_cells)
+    
+    """
+
+    model_traj_trans = model_traj.transpose(2, 1, 0) # (timepoints, n_cells, d)
+    target_traj_trans = target_traj.transpose(2, 1, 0) # (timepoints, n_cells, d)
+
+    vmmd = vmap(mmd)
+
+    return jnp.sum(vmmd(model_traj_trans, target_traj_trans))
