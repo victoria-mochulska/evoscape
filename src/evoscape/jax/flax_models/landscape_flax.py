@@ -52,8 +52,8 @@ class LandscapeFlax(nnx.Module):
         self.sim_params: Dict[str, Any] = nnx.static({})
 
         self.get_cell_states = nnx.static(None)
-        self.signal_param = nnx.static(None)
-        self.regime = nnx.static(None)
+        self.signal_param = nnx.data(None)
+        self.regime = nnx.data(None)
 
         self.rngs = rngs
 
@@ -62,8 +62,8 @@ class LandscapeFlax(nnx.Module):
     # ==============================================================
 
     def set_regime_params(self, signal_param=None):
-        self.signal_param = nnx.static(signal_param)
-        self.regime = nnx.static(
+        self.signal_param = nnx.data(signal_param)
+        self.regime = nnx.data(
             wrapped_regime(
                 self.static,
                 self.signal_param
@@ -99,6 +99,9 @@ class LandscapeFlax(nnx.Module):
     # ==============================================================
 
     def __call__(self, q_init):
+        """
+        q_init : array (2,n)
+        """
 
         key = self.rngs.default()
 
