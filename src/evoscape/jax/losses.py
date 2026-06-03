@@ -5,6 +5,9 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from jax.scipy.special import kl_div, entr
 
+from ott.geometry import pointcloud
+from ott.tools import sinkhorn_divergence
+
 from .dynamics import _integrate, init_cell
 from .types import LandscapeDynamic, LandscapeStatic
 
@@ -60,7 +63,7 @@ def drosophile_fitness(traj, states, decoded_traj, dynamic, decoder, data, fitne
 
 
 # ==========================================================
-# Loss to compare point clouds
+# LOSSES TO COMPARE POINT CLOUDS
 # ==========================================================
  
  
@@ -139,5 +142,72 @@ def mmd_traj(
     target_traj_trans = target_traj.transpose(2, 1, 0) # (timepoints, n_cells, d)
 
     vmmd = vmap(mmd)
+
+    return jnp.sum(vmmd(model_traj_trans, target_traj_trans))
+
+
+# ---------------------------------------------------------------------------
+# sinkhorn distance
+# ---------------------------------------------------------------------------
+
+
+def sinkhorn_loss(x: jnp.ndarray, y: jnp.ndarray, epsilon: float = 0.1) -> float:
+    """
+    Sinkhorn divergence between 2 point clouds
+    This distance is differentiable, but seems to be 10 times slower than mmd
+
+    Args:
+        x: source cloud,  shape (n, d)
+        y: target cloud,  shape (m, d)
+        epsilon: entropic regularization (small = difficult to optimize, big = far from true distance)
+
+    Returns:
+        scalar >= 0 close to 0 if the distribution of x and y are similar
+    """
+    div, _ = sinkhorn_divergence.sinkhorn_divergence(
+        pointcloud.PointCloud,   
+        x=x,
+        y=y,
+        epsilon=epsilon,
+    )
+    return div  
+
+def sinkhorn_traj(
+    model_traj: jnp.ndarray,
+    target_traj: jnp.ndarray,
+) -> jnp.ndarray:
+    """
+    model_traj : array (d, n_cells, timepoints)
+    target_traj : array (d, n_cells, timepoints)
+
+    we need to apply sinkhorn to each sub array of size (d, n_cells)
+    
+    """
+
+    model_traj_trans = model_traj.transpose(2, 1, 0) # (timepoints, n_cells, d)
+    target_traj_trans = target_traj.transpose(2, 1, 0) # (timepoints, n_cells, d)
+
+    vmmd = vmap(sinkhorn_loss)
+
+    return jnp.sum(vmmd(model_traj_trans, target_traj_trans))
+
+## may be useful if we have lots of losses between cloud points in the future
+def loss_traj(
+    model_traj: jnp.ndarray,
+    target_traj: jnp.ndarray,
+    loss_fn: Callable
+) -> jnp.ndarray:
+    """
+    model_traj : array (d, n_cells, timepoints)
+    target_traj : array (d, n_cells, timepoints)
+    loss_fn : function to compare 2 cloud points
+
+    we need to apply mmd to each sub array of size (d, n_cells)
+    """
+
+    model_traj_trans = model_traj.transpose(2, 1, 0) # (timepoints, n_cells, d)
+    target_traj_trans = target_traj.transpose(2, 1, 0) # (timepoints, n_cells, d)
+
+    vmmd = vmap(loss_fn)
 
     return jnp.sum(vmmd(model_traj_trans, target_traj_trans))

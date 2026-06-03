@@ -696,6 +696,24 @@ files = [
 ]
 
 [[package]]
+name = "equinox"
+version = "0.13.8"
+description = "Elegant easy-to-use neural networks in JAX."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "equinox-0.13.8-py3-none-any.whl", hash = "sha256:ca004348533cc30a63ebe8823d7dd4bb626dce17743d40bbddb89b402ef2a240"},
+    {file = "equinox-0.13.8.tar.gz", hash = "sha256:dd075050018e2dd02e252e9d29d3060f7e67f085622d8d27a8e89e24bb8523db"},
+]
+
+[package.dependencies]
+jax = ">=0.4.38,<0.7.0 || >0.7.0,<0.7.1 || >0.7.1"
+jaxtyping = ">=0.2.20"
+typing-extensions = ">=4.5.0"
+wadler-lindig = ">=0.1.0"
+
+[[package]]
 name = "etils"
 version = "1.14.0"
 description = "Collection of common python utils"
@@ -1227,6 +1245,39 @@ files = [
 ml_dtypes = ">=0.5.0"
 numpy = ">=2.0"
 scipy = ">=1.14"
+
+[[package]]
+name = "jaxopt"
+version = "0.8.5"
+description = "Hardware accelerated, batchable and differentiable optimizers in JAX."
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "jaxopt-0.8.5-py3-none-any.whl", hash = "sha256:ff221d1a86908ec759eb1e219ee1d12bf208a70707e961bf7401076fe7cf4d5e"},
+    {file = "jaxopt-0.8.5.tar.gz", hash = "sha256:2790bd68ef132b216c083a8bc7a2704eceb35a92c0fc0a1e652e79dfb1e9e9ab"},
+]
+
+[package.dependencies]
+jax = ">=0.2.18"
+jaxlib = ">=0.1.69"
+numpy = ">=1.18.4"
+scipy = ">=1.0.0"
+
+[[package]]
+name = "jaxtyping"
+version = "0.3.10"
+description = "Type annotations and runtime checking for shape and dtype of JAX/NumPy/PyTorch/etc. arrays."
+optional = false
+python-versions = ">=3.11"
+groups = ["main"]
+files = [
+    {file = "jaxtyping-0.3.10-py3-none-any.whl", hash = "sha256:e611a2b0a2fc3f867f01ceb3769dee6909a6d2075625dad07d3877e9e1297188"},
+    {file = "jaxtyping-0.3.10.tar.gz", hash = "sha256:7e79b050257bb1c757ee2c3d4ba246bd54422dc785b25f24797a8ce014f6daca"},
+]
+
+[package.dependencies]
+wadler-lindig = ">=0.1.3"
 
 [[package]]
 name = "jedi"
@@ -1771,6 +1822,24 @@ packaging = "*"
 dev = ["changelist (==0.5)", "spin (==0.15)"]
 lint = ["pre-commit (==4.3.0)"]
 test = ["coverage[toml] (>=7.2)", "pytest (>=8.0)", "pytest-cov (>=5.0)"]
+
+[[package]]
+name = "lineax"
+version = "0.1.1"
+description = "Linear solvers in JAX and Equinox."
+optional = false
+python-versions = "~=3.11"
+groups = ["main"]
+files = [
+    {file = "lineax-0.1.1-py3-none-any.whl", hash = "sha256:2e399f1674773ab2ba54d76175a618977a554f47abd0a345198d53d92c07beb2"},
+    {file = "lineax-0.1.1.tar.gz", hash = "sha256:187b8ea93b8e1099fb792e81c6e71a9c269f4fcadbb5313fe312d5847f581f9d"},
+]
+
+[package.dependencies]
+equinox = ">=0.11.10"
+jax = ">=0.10.0"
+jaxtyping = ">=0.2.24"
+typing-extensions = ">=4.5.0"
 
 [[package]]
 name = "markdown-it-py"
@@ -2481,6 +2550,31 @@ uvloop = {version = "*", markers = "platform_system != \"Windows\""}
 docs = ["aiofiles", "clu", "flax", "google-cloud-logging", "grain", "opencv-python", "safetensors", "tensorflow_datasets"]
 testing = ["aiofiles", "chex", "clu", "fastapi", "flax", "google-cloud-logging", "grain", "httpx", "mock", "pytest", "pytest-xdist", "safetensors", "tensorflow", "torch"]
 tiering-service = ["aiosqlite", "greenlet", "grpcio-tools (>=1.80.0)", "pysqlite3", "sqlalchemy (>=1.4.0)"]
+
+[[package]]
+name = "ott-jax"
+version = "0.6.0"
+description = "Optimal Transport Tools in JAX"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "ott_jax-0.6.0-py3-none-any.whl", hash = "sha256:89d7ee73ae105a56385b66a43e9acd5ae070e66d991efc56047ab47cc756f3e6"},
+    {file = "ott_jax-0.6.0.tar.gz", hash = "sha256:86fda8aea68a6c29c989b1be2fc8bc7e5344e6353d3e486a3edbc36364b07483"},
+]
+
+[package.dependencies]
+jax = ">=0.4.0"
+jaxopt = ">=0.8"
+lineax = ">=0.0.7"
+numpy = ">=1.20.0"
+optax = ">=0.2.4"
+
+[package.extras]
+dev = ["pre-commit (>=2.16.0)", "tox (>=4)"]
+docs = ["matplotlib", "myst-nb (>=0.17.1)", "sphinx (>=4.0)", "sphinx-book-theme (>=1.0.1)", "sphinx-copybutton (>=0.5.1)", "sphinx_autodoc_typehints (>=1.12.0)", "sphinxcontrib-bibtex (>=2.5.0)", "sphinxcontrib-spelling (>=7.7.0)"]
+neural = ["diffrax (>=0.4.1)", "flax (>=0.6.6)", "optax (>=0.2.4)"]
+test = ["chex", "coverage[toml]", "matplotlib", "networkx (>=2.5)", "pytest", "pytest-cov", "pytest-memray", "pytest-xdist", "scikit-learn (>=1.0)", "tqdm", "tslearn (>=0.5) ; python_version < \"3.13\""]
 
 [[package]]
 name = "overrides"
@@ -4033,6 +4127,22 @@ docs = ["Sphinx (>=4.1.2,<4.2.0)", "sphinx_rtd_theme (>=0.5.2,<0.6.0)", "sphinxc
 test = ["aiohttp (>=3.10.5)", "flake8 (>=6.1,<7.0)", "mypy (>=0.800)", "psutil", "pyOpenSSL (>=25.3.0,<25.4.0)", "pycodestyle (>=2.11.0,<2.12.0)"]
 
 [[package]]
+name = "wadler-lindig"
+version = "0.1.7"
+description = "A Wadler–Lindig pretty-printer for Python."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "wadler_lindig-0.1.7-py3-none-any.whl", hash = "sha256:e3ec83835570fd0a9509f969162aeb9c65618f998b1f42918cfc8d45122fe953"},
+    {file = "wadler_lindig-0.1.7.tar.gz", hash = "sha256:81d14d3fe77d441acf3ebd7f4aefac20c74128bf460e84b512806dccf7b2cd55"},
+]
+
+[package.extras]
+dev = ["numpy", "pre-commit", "pytest"]
+docs = ["hippogriffe (==0.1.0)", "mkdocs (==1.6.1)", "mkdocs-include-exclude-files (==0.1.0)", "mkdocs-ipynb (==0.1.0)", "mkdocs-material (==9.6.7)", "mkdocstrings[python] (==0.28.3)", "pymdown-extensions (==10.14.3)"]
+
+[[package]]
 name = "wcwidth"
 version = "0.7.0"
 description = "Measures the displayed width of unicode strings in a terminal"
@@ -4120,4 +4230,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "82e9f51cbddeda2376976ccb169731acd6d560b7ed51fd02424521854354e702"
+content-hash = "02aaeab9ea4653210c29e426d20c61d48197b650406794845b8853e43370f9e7"
