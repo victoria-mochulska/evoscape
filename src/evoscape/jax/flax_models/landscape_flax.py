@@ -47,13 +47,13 @@ class LandscapeFlax(nnx.Module):
         # CONFIGURATION STATIQUE
         # ==========================================================
 
-        self.static = nnx.data(static)
+        self.static = nnx.data(static) # cette ligne est tellement aberrante mdr
 
         self.sim_params: Dict[str, Any] = nnx.static({})
 
         self.get_cell_states = nnx.static(None)
         self.signal_param = nnx.data(None)
-        self.regime = nnx.data(None)
+        self.regime = nnx.static(None)
 
         self.rngs = rngs
 
@@ -63,7 +63,7 @@ class LandscapeFlax(nnx.Module):
 
     def set_regime_params(self, signal_param=None):
         self.signal_param = nnx.data(signal_param)
-        self.regime = nnx.data(
+        self.regime = nnx.static(
             wrapped_regime(
                 self.static,
                 self.signal_param
