@@ -53,7 +53,7 @@ class LandscapeFlax(nnx.Module):
 
         self.get_cell_states = nnx.static(None)
         self.signal_param = nnx.data(None)
-        self.regime = nnx.static(None)
+        self.regime = nnx.data(None)
 
         self.rngs = rngs
 
@@ -63,7 +63,7 @@ class LandscapeFlax(nnx.Module):
 
     def set_regime_params(self, signal_param=None):
         self.signal_param = nnx.data(signal_param)
-        self.regime = nnx.static(
+        self.regime = nnx.data(
             wrapped_regime(
                 self.static,
                 self.signal_param

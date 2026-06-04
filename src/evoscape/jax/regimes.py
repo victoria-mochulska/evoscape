@@ -67,9 +67,15 @@ regimes = (
 
 
 def wrapped_regime(static: LandscapeStatic, signal_param=None):
+    """
+    All functions need to be wrapped with Partial (the one from jax.tree_util, not functools.partial)
+    That way, they can be seen as pytrees by jax. This is important because that way we can declare
+    regimes as nnx.data in landscape_flax (nnx.data would throw an error if we didn't wrap with nnx.data)
+    
+    """
     regime_number = static.regime_id
     if regime_number == 0:
-        return regimes[regime_number]
+        return Partial(regimes[regime_number])
     t_list = static.morphogen_times
 
     # All modules are supposed to have the same tau
