@@ -130,13 +130,26 @@ class LandscapeFlax(nnx.Module):
     # GET LANDSCAPE
     # ==============================================================
     
-    def get_landscape(self):
+    def get_landscape(self, q_init = None):
+        """
+        LandscapeFlax is implemented to be in the spirit of a nnx.Module : it takes data (the
+        initial cell positions) and outputs data (their trajectories). That's why I made it so
+        the object doesn't contain the trajectories of the cells, unlike in the original landscape.
+
+        So in order to convert the nnx.Module to the original landscape, we compute trajectories here
+        before giving it to the object if the user specify a q_init
+        
+        """
         trajectories = None
         cell_coordinates = None
         cell_states = None
-        result = None
-        fitness = None
+        result = None # this one stays None : landscape_flax has no notion of result
+        fitness = None # this one stays None : landscape_flax has no notion of fitness
 
+        if q_init is not None:
+            trajectories, cell_states = self(q_init)
+            cell_coordinates = trajectories[:, :, -1]
+        
         return pytree_to_landscape(
             self.dynamic,
             self.static,
