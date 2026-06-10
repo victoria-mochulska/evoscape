@@ -13,18 +13,17 @@ from flax import nnx
 # Clipping function for non negative value allowed. Clipping values should be chosen wisely
 def clip_dynamic(dynamic):
     def clip_fn(path, x):
-        key = path[-1]
+        names = [k.name for k in path if hasattr(k, "name")]
 
-        name = getattr(key, "name", None)
+        if "a" in names:
+            return jnp.clip(x, 0.0, 20)
+        elif "s" in names:
+            return jnp.clip(x, 0.0, 5)
+        elif "x" in names:
+            return jnp.clip(x, -10, 10)
+        elif "y" in names:
+            return jnp.clip(x, -10, 10)
 
-        if name == "a":
-            return jnp.clip(x, 0.5, 20)
-        if name == "s":
-            return jnp.clip(x, 1, 5)
-        if name == "x":
-            return jnp.clip(x, -10, 10)
-        if name == "y":
-            return jnp.clip(x, -10, 10)
         return x
 
     return jtu.tree_map_with_path(clip_fn, dynamic)

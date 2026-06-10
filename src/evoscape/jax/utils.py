@@ -9,6 +9,7 @@ import pandas as pd
 from jax import jit, vmap
 from evoscape.landscape_visuals import visualize_landscape
 from evoscape.jax.converters import pytree_to_landscape
+from copy import copy
 
 # Initialization function used in the fitness function, we let the model choose where the cells should start in optimization
 def init_cell(key,n,init_cond,noise):                    
@@ -23,20 +24,115 @@ def init_cell_circle(n, center, r):
 
     return jnp.stack([x,y])
 
+# to use for modules if colored by type
+fp_type_colors = {
+    'Node': 'tab:green',
+    'UnstableNode': 'tab:blue',
+    'Center': 'tab:purple',
+    'NegCenter': 'hotpink',
+}
 
-def make_movie_landscape(dynamics, static, xx, yy, n_frames):
+# to use for modules if colored by order in the module_list
+order_colors = (
+    'indianred',
+    'tab:orange',
+    'gold',
+    'tab:green',
+    'tab:blue',
+    'tab:purple',
+    # 'm',
+)
+def visualize_landscape_adapted_to_points(landscape, xx, yy, regime,
+                        color_scheme='fp_types',
+                        draw_circles=True,
+                        points=None,
+                        point_color='red',
+                        point_size=40,
+                        point_marker='o'):
+    """ Simple visualization of landscape flow and modules in one regime. """
+    density = 0.5
+    curl = np.zeros((len(landscape.module_list)), dtype='bool')
+    circles = []
+    for i, module in enumerate(landscape.module_list):
+        if module.__class__.__name__ == 'Center' or module.__class__.__name__ == 'NegCenter':
+            curl[i] = 1
+
+    if draw_circles:
+        for i, module in enumerate(landscape.module_list):
+            if module.a.size == 1 and module.s.size == 1 and regime == 0:
+                sig = module.s.item()
+                A = module.a.item()
+            else:
+                sig = module.s[regime]
+                A = module.a[regime]
+
+            if color_scheme == 'fp_types':
+                color = fp_type_colors[module.__class__.__name__]
+            elif color_scheme == 'order':
+                color = order_colors[i]
+            else:
+                color = 'grey'
+
+            # for negative amplitude - non-filled cicle
+            if A < 0:
+                fill = False
+                lw = 2
+            else:
+                fill = True
+                lw = 0
+            circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
+                                      fill=fill, alpha=0.22 * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
+    morphogen_times = landscape.morphogen_times
+    landscape.morphogen_times = np.arange(landscape.n_regimes) + 0.5
+    (dX, dY), potential, rot_potential = landscape(float(regime), (xx, yy), return_potentials=True)
+
+    fig, stream_ax = plt.subplots(1, 1, figsize=(5, 5))
+    circles_ax = stream_ax
+    if draw_circles:
+        for i in range(len(landscape.module_list)):
+            circles_ax.add_patch(copy(circles[i]))
+
+    stream_ax.streamplot(xx, yy, dX, dY, density=density, arrowsize=2., arrowstyle='->', linewidth=1,
+                         color='grey')
+    stream_ax.contour(xx, yy, dX, (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
+    stream_ax.contour(xx, yy, dY, (0,), colors=('k',), linestyles='--', linewidths=1.5, alpha=0.7)
+
+    stream_ax.set_xlim([np.min(xx), np.max(xx)])
+    stream_ax.set_ylim([np.min(yy), np.max(yy)])
+    stream_ax.set_xticks([])
+    stream_ax.set_yticks([])
+    landscape.morphogen_times = morphogen_times
+    # plt.show()
+    if points is not None:
+        points = np.asarray(points)
+
+        stream_ax.scatter(
+            points[:, 0],
+            points[:, 1],
+            c=point_color,
+            s=point_size,
+            marker=point_marker,
+            zorder=10
+        )
+    return fig
+
+def make_movie_landscape(dynamics, static, xx, yy, n_frames,path, n_regime_chosen=0, points=None):
     frames = []
     indices = np.linspace(0, len(dynamics)-1, n_frames, dtype=int)
-    selected = [dynamics[i] for i in indices]
-    for dynamic in selected:
+    for i in indices:
+        dynamic = dynamics[i]
+        if points is not None:
+            pts = points[i]
+        else:
+            pts = None
         l = pytree_to_landscape(dynamic, static)
-        fig = visualize_landscape(l, xx, yy, regime=0, color_scheme='fp_types')
+        fig = visualize_landscape_adapted_to_points(l, xx, yy, regime=n_regime_chosen, color_scheme='fp_types', points=pts)
         plt.close(fig)
         buf = io.BytesIO()
         fig.savefig(buf, format='png')
         buf.seek(0)
         frames.append(imageio.imread(buf))
-    imageio.mimsave("../temp/figures/animation.gif", frames, duration=10.)
+    imageio.mimsave(path, frames, duration=10.)
 
 @jit
 def rescale(A, N, T):
