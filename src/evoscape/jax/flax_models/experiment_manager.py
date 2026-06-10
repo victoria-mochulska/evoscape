@@ -219,3 +219,77 @@ class ExperimentManager:
         if len(matches) > 1:
             raise ValueError(f"Ambiguous prefix '{exp_name}': {[m.name for m in matches]}")
         raise FileNotFoundError(f"Experiment '{exp_name}' not found in {self.root}")
+
+    def summary(self, top_n: int = 3, convergence_threshold: float = None) -> None:
+        """
+        Print a summary of all saved experiments, ranked by final loss.
+
+        Parameters
+        ----------
+        top_n                  : number of best experiments to highlight
+        convergence_threshold  : if given, reports the epoch at which loss first
+                                dropped below this value
+        """
+        exps = sorted(
+            [d for d in self.root.iterdir() if d.is_dir()],
+            key=lambda d: d.name,
+        )
+        if not exps:
+            print("No experiments found.")
+            return
+
+        rows = []
+        for exp_dir in exps:
+            try:
+                config    = json.loads((exp_dir / "config.json").read_text())
+                loss_vals = json.loads((exp_dir / "loss_vals.json").read_text())
+
+                loss_final = float(loss_vals[-1])
+                loss_min   = float(min(loss_vals))
+                epoch_min  = int(np.argmin(loss_vals))
+                stability  = float(np.std(loss_vals[-20:]))  # std over last 20 epochs
+
+                conv_epoch = None
+                if convergence_threshold is not None:
+                    below = [i for i, v in enumerate(loss_vals) if v < convergence_threshold]
+                    conv_epoch = below[0] if below else None
+
+                rows.append({
+                    "name":        exp_dir.name,
+                    "timestamp":   config.get("_timestamp", "")[:19],
+                    "notes":       config.get("_notes", ""),
+                    "loss_final":  loss_final,
+                    "loss_min":    loss_min,
+                    "epoch_min":   epoch_min,
+                    "stability":   stability,
+                    "conv_epoch":  conv_epoch,
+                })
+            except Exception as e:
+                print(f"  [could not read {exp_dir.name}: {e}]")
+
+        rows.sort(key=lambda r: r["loss_final"])
+        best_names = {r["name"] for r in rows[:top_n]}
+
+        # header
+        conv_col = "  conv_epoch" if convergence_threshold is not None else ""
+        print(f"\n{'':2} {'Name':<40} {'Date':<20} {'loss_final':>10} {'loss_min':>10} {'epoch_min':>10} {'stability':>10}{conv_col}  Notes")
+        print("-" * (115 + (13 if convergence_threshold else 0)))
+
+        for i, r in enumerate(rows):
+            marker = f"#{i+1} " if r["name"] in best_names else "   "
+            conv_str = f"  {r['conv_epoch'] if r['conv_epoch'] is not None else '—':>10}" if convergence_threshold is not None else ""
+            print(
+                f"{marker}"
+                f"{r['name']:<40} "
+                f"{r['timestamp']:<20} "
+                f"{r['loss_final']:>10.4f} "
+                f"{r['loss_min']:>10.4f} "
+                f"{r['epoch_min']:>10d} "
+                f"{r['stability']:>10.4f}"
+                f"{conv_str}"
+                f"  {r['notes'][:40]}"
+            )
+
+        print(f"\nTop {top_n}:")
+        for i, r in enumerate(rows[:top_n]):
+            print(f"  #{i+1} {r['name']}  —  loss_final={r['loss_final']:.4f}, loss_min={r['loss_min']:.4f} (epoch {r['epoch_min']})")
