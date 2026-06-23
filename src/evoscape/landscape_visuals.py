@@ -239,14 +239,11 @@ def _phase_plot_colors(
         return basin_image, cmap, norm, attractor_facecolors
 
     if basin_coloring not in ('module', 'node'):
-        raise ValueError("basin_coloring must be 'attractor' or 'module'.")
+        raise ValueError("basin_coloring must be 'attractor', 'module', or 'node'.")
 
-    attractor_module_map = landscape._map_attractors_to_nodes(
-        attractors,
-        basin_labels=basin_labels,
-        x_coords=x_coords,
-        y_coords=y_coords,
-    )
+    node_labels = None if basin_grid is None else basin_grid.get('node_labels')
+    if node_labels is not None:
+        node_labels = np.asarray(node_labels, dtype=int)
 
     if module_order_colors is None:
         module_palette = pastel_order_colors
@@ -268,7 +265,7 @@ def _phase_plot_colors(
     no_node_attractors = []
     for attractor in attractors:
         attractor_id = int(attractor['id'])
-        module_index = attractor_module_map.get(attractor_id)
+        module_index = attractor.get('node_id')
         if module_index is None:
             no_node_attractors.append(attractor_id)
             continue
@@ -285,8 +282,12 @@ def _phase_plot_colors(
         return None, cmap, None, attractor_facecolors
 
     basin_image = np.zeros_like(basin_labels, dtype=int)
-    for attractor_id, color_id in attractor_color_ids.items():
-        basin_image[basin_labels == attractor_id] = int(color_id)
+    if node_labels is not None:
+        for node_state in range(landscape.n_nodes):
+            basin_image[node_labels == node_state] = node_state + 1
+    else:
+        for attractor_id, color_id in attractor_color_ids.items():
+            basin_image[basin_labels == attractor_id] = int(color_id)
 
     cmap = ListedColormap(colors)
     norm = BoundaryNorm(np.arange(-0.5, len(colors) + 0.5), cmap.N)
@@ -301,6 +302,7 @@ def _plot_phase_overlays(
     attractor_facecolors=None,
     saddle_manifolds=None,
     show_saddle_manifolds=False,
+    plot_stable_manifolds=True,
     show_cycles=True,
     show_fixed_points=True,
     stable_manifold_color=stable_manifold_color,
@@ -316,18 +318,19 @@ def _plot_phase_overlays(
 
     if show_saddle_manifolds and saddle_manifolds is not None:
         for saddle in saddle_manifolds.get('saddles', ()):
-            for branch in saddle.get('stable', ()):
-                branch = np.asarray(branch, dtype=float)
-                if branch.shape[0] >= 2:
-                    ax.plot(
-                        branch[:, 0],
-                        branch[:, 1],
-                        color=stable_manifold_color,
-                        linestyle='-',
-                        linewidth=2.6,
-                        alpha=0.95,
-                        zorder=5,
-                    )
+            if plot_stable_manifolds:
+                for branch in saddle.get('stable', ()):
+                    branch = np.asarray(branch, dtype=float)
+                    if branch.shape[0] >= 2:
+                        ax.plot(
+                            branch[:, 0],
+                            branch[:, 1],
+                            color=stable_manifold_color,
+                            linestyle='-',
+                            linewidth=2.6,
+                            alpha=0.95,
+                            zorder=5,
+                        )
             for branch in saddle.get('unstable', ()):
                 branch = np.asarray(branch, dtype=float)
                 if branch.shape[0] >= 2:
@@ -354,6 +357,9 @@ def _plot_phase_overlays(
                 min(1.0, cycle_line_saturation_scale * s),
             )
             traj = np.asarray(attractor['trajectory'])
+            period_steps = int(attractor.get('period_steps', 0))
+            if period_steps > 0 and traj.shape[0] > period_steps + 1:
+                traj = traj[-period_steps - 1:]
             ax.plot(traj[:, 0], traj[:, 1], color=dark_color, linewidth=2.9, zorder=6)
 
     if show_fixed_points and fixed_points['points'].size:
@@ -406,6 +412,7 @@ def plot_attractor_basins_t(
     show_cycles=True,
     saddle_manifolds=None,
     show_saddle_manifolds=False,
+    plot_stable_manifolds=True,
     stable_manifold_color=stable_manifold_color,
     unstable_manifold_color=unstable_manifold_color,
 ):
@@ -471,6 +478,7 @@ def plot_attractor_basins_t(
         attractor_facecolors=attractor_facecolors,
         saddle_manifolds=saddle_manifolds,
         show_saddle_manifolds=show_saddle_manifolds,
+        plot_stable_manifolds=plot_stable_manifolds,
         show_cycles=show_cycles,
         show_fixed_points=show_fixed_points,
         stable_manifold_color=stable_manifold_color,
@@ -496,6 +504,7 @@ def plot_phase_skeleton_t(
     show_fixed_points=True,
     show_cycles=True,
     show_saddle_manifolds=True,
+    plot_stable_manifolds=True,
     unresolved_color=unresolved_basin_color,
     basin_coloring='attractor',
     module_order_colors=None,
@@ -552,6 +561,7 @@ def plot_phase_skeleton_t(
         attractor_facecolors=attractor_facecolors,
         saddle_manifolds=saddle_manifolds,
         show_saddle_manifolds=show_saddle_manifolds,
+        plot_stable_manifolds=plot_stable_manifolds,
         show_cycles=show_cycles,
         show_fixed_points=show_fixed_points,
         stable_manifold_color=stable_manifold_color,

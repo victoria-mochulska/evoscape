@@ -34,25 +34,25 @@ class LandscapePhaseAnalysisBase:
             return "saddle"
         return "center_or_degenerate"
 
-    def numerical_jacobian(self, t, q, h=1e-4):
+    def numerical_jacobian(self, t, q, h=1e-4, use_jax=False):
         coords, squeeze_output = self._coerce_phase_coordinate_array(q)
         jac = np.zeros((2, 2) + coords.shape[1:], dtype=float)
 
         for axis in range(2):
             delta = np.zeros_like(coords)
             delta[axis] = h
-            flow_plus = np.asarray(self(t, coords + delta, return_potentials=False), dtype=float)
-            flow_minus = np.asarray(self(t, coords - delta, return_potentials=False), dtype=float)
+            flow_plus = np.asarray(self(t, coords + delta, return_potentials=False, use_jax=use_jax), dtype=float)
+            flow_minus = np.asarray(self(t, coords - delta, return_potentials=False, use_jax=use_jax), dtype=float)
             jac[:, axis] = (flow_plus - flow_minus) / (2.0 * h)
 
         if squeeze_output:
             return jac.reshape(2, 2)
         return jac
 
-    def jacobian(self, t, q, method="auto", h=1e-4):
+    def jacobian(self, t, q, method="auto", h=1e-4, use_jax=False):
         method = method.lower()
         if method in ("numeric", "numerical"):
-            return self.numerical_jacobian(t, q, h=h)
+            return self.numerical_jacobian(t, q, h=h, use_jax=use_jax)
         if method == "analytic":
             return self.analytic_jacobian(t, q)
         if method != "auto":
@@ -61,19 +61,346 @@ class LandscapePhaseAnalysisBase:
         try:
             return self.analytic_jacobian(t, q)
         except NotImplementedError:
-            return self.numerical_jacobian(t, q, h=h)
+            return self.numerical_jacobian(t, q, h=h, use_jax=use_jax)
 
-    def _flow_vector(self, t, point):
+    def _flow_vector(self, t, point, use_jax=False):
         coords = np.asarray(point, dtype=float).reshape(2, 1)
-        flow = np.asarray(self(t, coords, return_potentials=False), dtype=float)
+        flow = np.asarray(self(t, coords, return_potentials=False, use_jax=use_jax), dtype=float)
         return flow.reshape(2)
 
-    def _rk4_step(self, t, q, dt):
-        k1 = np.asarray(self(t, q, return_potentials=False), dtype=float)
-        k2 = np.asarray(self(t, q + 0.5 * dt * k1, return_potentials=False), dtype=float)
-        k3 = np.asarray(self(t, q + 0.5 * dt * k2, return_potentials=False), dtype=float)
-        k4 = np.asarray(self(t, q + dt * k3, return_potentials=False), dtype=float)
+    def _flow_vector_from_pars(self, pars, point, use_jax=False):
+        coords = np.asarray(point, dtype=float).reshape(2, 1)
+        flow = np.asarray(self._eval_flow(pars, coords, return_potentials=False, use_jax=use_jax), dtype=float)
+        return flow.reshape(2)
+
+    def _numerical_jacobian_from_pars(self, pars, q, h=1e-4, use_jax=False):
+        coords, squeeze_output = self._coerce_phase_coordinate_array(q)
+        jac = np.zeros((2, 2) + coords.shape[1:], dtype=float)
+
+        for axis in range(2):
+            delta = np.zeros_like(coords)
+            delta[axis] = h
+            flow_plus = np.asarray(
+                self._eval_flow(pars, coords + delta, return_potentials=False, use_jax=use_jax),
+                dtype=float,
+            )
+            flow_minus = np.asarray(
+                self._eval_flow(pars, coords - delta, return_potentials=False, use_jax=use_jax),
+                dtype=float,
+            )
+            jac[:, axis] = (flow_plus - flow_minus) / (2.0 * h)
+
+        if squeeze_output:
+            return jac.reshape(2, 2)
+        return jac
+
+    def _rk4_step(self, t, q, dt, use_jax=False):
+        k1 = np.asarray(self(t, q, return_potentials=False, use_jax=use_jax), dtype=float)
+        k2 = np.asarray(self(t, q + 0.5 * dt * k1, return_potentials=False, use_jax=use_jax), dtype=float)
+        k3 = np.asarray(self(t, q + 0.5 * dt * k2, return_potentials=False, use_jax=use_jax), dtype=float)
+        k4 = np.asarray(self(t, q + dt * k3, return_potentials=False, use_jax=use_jax), dtype=float)
         return q + dt * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+
+    def _rk4_step_batched(self, pars, q, dt, use_jax=False):
+        k1 = np.asarray(self._eval_flow(pars, q, return_potentials=False, use_jax=use_jax), dtype=float)
+        k2 = np.asarray(self._eval_flow(pars, q + 0.5 * dt * k1, return_potentials=False, use_jax=use_jax), dtype=float)
+        k3 = np.asarray(self._eval_flow(pars, q + 0.5 * dt * k2, return_potentials=False, use_jax=use_jax), dtype=float)
+        k4 = np.asarray(self._eval_flow(pars, q + dt * k3, return_potentials=False, use_jax=use_jax), dtype=float)
+        return q + dt * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+
+    @staticmethod
+    def _jax_modules():
+        try:
+            import jax
+            jax.config.update("jax_enable_x64", True)
+            import jax.numpy as jnp
+            import sys
+        except ImportError as exc:
+            raise ImportError("use_jax=True requires jax. Install with `poetry install -E jax`.") from exc
+        landscape_module = sys.modules.get("evoscape.landscapes.landscape_class")
+        if landscape_module is not None:
+            landscape_module.jnp = jnp
+        return jax, jnp
+
+    def _integrate_manifold_branches_batched_jax(
+        self,
+        pars,
+        starts,
+        dt,
+        n_steps,
+        x_range,
+        y_range,
+        fixed_point_positions=None,
+        exclude_indices=None,
+        termination_tol=1e-2,
+        velocity_tol=1e-3,
+    ):
+        jax, jnp = self._jax_modules()
+        starts = np.asarray(starts, dtype=float)
+        n_branches = starts.shape[1]
+        x_min, x_max = sorted(map(float, x_range))
+        y_min, y_max = sorted(map(float, y_range))
+        x_pad = 0.1 * max(x_max - x_min, termination_tol * 10.0)
+        y_pad = 0.1 * max(y_max - y_min, termination_tol * 10.0)
+        dt_scale = max(abs(float(dt)), 1e-12)
+        has_fixed_points = fixed_point_positions is not None and np.asarray(fixed_point_positions).size > 0
+        fixed_points_jax = (
+            jnp.asarray(fixed_point_positions, dtype=float)
+            if has_fixed_points
+            else jnp.empty((0, 2), dtype=float)
+        )
+        exclude_indices_jax = (
+            jnp.asarray(exclude_indices, dtype=int)
+            if exclude_indices is not None
+            else -jnp.ones(n_branches, dtype=int)
+        )
+        jax_pars = {
+            key: (jnp.asarray(value, dtype=float) if key != "empty" else value)
+            for key, value in pars.items()
+        }
+        fp_column_indices = jnp.arange(fixed_points_jax.shape[0])
+
+        def rk4(q):
+            k1 = self._eval_flow(jax_pars, q, return_potentials=False, use_jax=True)
+            k2 = self._eval_flow(jax_pars, q + 0.5 * dt * k1, return_potentials=False, use_jax=True)
+            k3 = self._eval_flow(jax_pars, q + 0.5 * dt * k2, return_potentials=False, use_jax=True)
+            k4 = self._eval_flow(jax_pars, q + dt * k3, return_potentials=False, use_jax=True)
+            return q + dt * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+
+        def scan_step(state, step):
+            current, active, lengths, step_velocity, terminated_fp, terminated_boundary, terminated_nonfinite = state
+            safe_current = jnp.where(active[None, :], current, 0.0)
+            next_positions = rk4(safe_current)
+            finite = jnp.all(jnp.isfinite(next_positions), axis=0)
+            live = active & finite
+            nonfinite = active & ~finite
+            speeds = jnp.linalg.norm(next_positions - safe_current, axis=0) / dt_scale
+            boundary = live & (
+                (next_positions[0] < x_min - x_pad)
+                | (next_positions[0] > x_max + x_pad)
+                | (next_positions[1] < y_min - y_pad)
+                | (next_positions[1] > y_max + y_pad)
+            )
+            nearest = -jnp.ones(n_branches, dtype=int)
+            converged = jnp.zeros(n_branches, dtype=bool)
+            if has_fixed_points:
+                distances = jnp.linalg.norm(next_positions.T[:, None, :] - fixed_points_jax[None, :, :], axis=2)
+                distances = jnp.where(
+                    fp_column_indices[None, :] == exclude_indices_jax[:, None],
+                    jnp.inf,
+                    distances,
+                )
+                nearest = jnp.argmin(distances, axis=1)
+                nearest_distance = distances[jnp.arange(n_branches), nearest]
+                converged = (
+                    live
+                    & ~boundary
+                    & jnp.isfinite(nearest_distance)
+                    & (nearest_distance <= termination_tol)
+                    & (speeds <= velocity_tol)
+                )
+
+            finished = nonfinite | boundary | converged
+            active = active & ~finished
+            current = jnp.where(active[None, :], next_positions, jnp.nan)
+            lengths = jnp.where(live, step + 2, lengths)
+            step_velocity = jnp.where(live, speeds, step_velocity)
+            terminated_fp = jnp.where(converged, nearest, terminated_fp)
+            terminated_boundary = terminated_boundary | boundary
+            terminated_nonfinite = terminated_nonfinite | nonfinite
+            stored_positions = jnp.where(live[None, :], next_positions, jnp.nan)
+            return (
+                current,
+                active,
+                lengths,
+                step_velocity,
+                terminated_fp,
+                terminated_boundary,
+                terminated_nonfinite,
+            ), stored_positions
+
+        @jax.jit
+        def run_scan(starts_jax):
+            state = (
+                starts_jax,
+                jnp.ones(n_branches, dtype=bool),
+                jnp.ones(n_branches, dtype=int),
+                jnp.full(n_branches, jnp.nan, dtype=float),
+                -jnp.ones(n_branches, dtype=int),
+                jnp.zeros(n_branches, dtype=bool),
+                jnp.zeros(n_branches, dtype=bool),
+            )
+            return jax.lax.scan(scan_step, state, jnp.arange(int(n_steps)))
+
+        final_state, trajectory_steps = run_scan(jnp.asarray(starts, dtype=float))
+        _, _, lengths, step_velocity, terminated_fp, terminated_boundary, terminated_nonfinite = final_state
+        trajectories_buffer = np.concatenate(
+            (starts[None, :, :], np.asarray(trajectory_steps, dtype=float)),
+            axis=0,
+        )
+        lengths = np.asarray(lengths, dtype=int)
+        trajectories = [trajectories_buffer[:lengths[idx], :, idx].copy() for idx in range(n_branches)]
+        endpoints = np.array([trajectory[-1].copy() for trajectory in trajectories], dtype=float)
+        return {
+            "trajectories": trajectories,
+            "endpoints": endpoints,
+            "step_velocity": np.asarray(step_velocity, dtype=float),
+            "terminated_fixed_point_index": np.asarray(terminated_fp, dtype=int),
+            "terminated_at_boundary": np.asarray(terminated_boundary, dtype=bool),
+            "terminated_nonfinite": np.asarray(terminated_nonfinite, dtype=bool),
+        }
+
+    def _integrate_manifold_branches_batched(
+        self,
+        pars,
+        starts,
+        dt,
+        n_steps,
+        x_range,
+        y_range,
+        fixed_point_positions=None,
+        exclude_indices=None,
+        termination_tol=1e-2,
+        velocity_tol=1e-3,
+        use_jax=False,
+    ):
+        starts, _ = self._coerce_phase_coordinate_array(starts)
+        n_branches = starts.shape[1]
+        if n_branches == 0:
+            return {
+                "trajectories": [],
+                "endpoints": np.empty((0, 2), dtype=float),
+                "step_velocity": np.empty((0,), dtype=float),
+                "terminated_fixed_point_index": np.empty((0,), dtype=int),
+                "terminated_at_boundary": np.empty((0,), dtype=bool),
+                "terminated_nonfinite": np.empty((0,), dtype=bool),
+            }
+
+        x_min, x_max = sorted(map(float, x_range))
+        y_min, y_max = sorted(map(float, y_range))
+        x_pad = 0.1 * max(x_max - x_min, termination_tol * 10.0)
+        y_pad = 0.1 * max(y_max - y_min, termination_tol * 10.0)
+        dt_scale = max(abs(float(dt)), 1e-12)
+
+        if fixed_point_positions is not None:
+            fixed_point_positions = np.asarray(fixed_point_positions, dtype=float)
+            if fixed_point_positions.ndim != 2:
+                fixed_point_positions = fixed_point_positions.reshape(-1, 2)
+        if exclude_indices is not None:
+            exclude_indices = np.asarray(exclude_indices, dtype=int).reshape(-1)
+            if exclude_indices.size != n_branches:
+                raise ValueError("exclude_indices must have one entry per branch.")
+        if use_jax:
+            return self._integrate_manifold_branches_batched_jax(
+                pars,
+                starts,
+                dt,
+                n_steps,
+                x_range,
+                y_range,
+                fixed_point_positions=fixed_point_positions,
+                exclude_indices=exclude_indices,
+                termination_tol=termination_tol,
+                velocity_tol=velocity_tol,
+            )
+
+        trajectories_buffer = np.full((int(n_steps) + 1, 2, n_branches), np.nan, dtype=float)
+        trajectories_buffer[0] = starts
+        lengths = np.ones(n_branches, dtype=int)
+        current = starts.copy()
+        active = np.ones(n_branches, dtype=bool)
+        step_velocity = np.full(n_branches, np.nan, dtype=float)
+        terminated_fixed_point_index = np.full(n_branches, -1, dtype=int)
+        terminated_at_boundary = np.zeros(n_branches, dtype=bool)
+        terminated_nonfinite = np.zeros(n_branches, dtype=bool)
+
+        for step in range(int(n_steps)):
+            if not np.any(active):
+                break
+
+            active_indices = np.flatnonzero(active)
+            current_active = current[:, active_indices]
+            next_active = self._rk4_step_batched(pars, current_active, dt, use_jax=use_jax)
+            finite_mask = np.all(np.isfinite(next_active), axis=0)
+
+            if np.any(~finite_mask):
+                nonfinite_indices = active_indices[~finite_mask]
+                terminated_nonfinite[nonfinite_indices] = True
+                active[nonfinite_indices] = False
+                current[:, nonfinite_indices] = np.nan
+
+            if not np.any(finite_mask):
+                continue
+
+            live_indices = active_indices[finite_mask]
+            live_current = current_active[:, finite_mask]
+            live_next = next_active[:, finite_mask]
+            trajectories_buffer[step + 1][:, live_indices] = live_next
+            lengths[live_indices] = step + 2
+            speeds = np.linalg.norm(live_next - live_current, axis=0) / dt_scale
+            step_velocity[live_indices] = speeds
+            current[:, live_indices] = live_next
+
+            finished = np.zeros(live_indices.size, dtype=bool)
+            boundary = (
+                (live_next[0] < x_min - x_pad)
+                | (live_next[0] > x_max + x_pad)
+                | (live_next[1] < y_min - y_pad)
+                | (live_next[1] > y_max + y_pad)
+            )
+            if np.any(boundary):
+                boundary_indices = live_indices[boundary]
+                terminated_at_boundary[boundary_indices] = True
+                finished |= boundary
+
+            if fixed_point_positions is not None and fixed_point_positions.size:
+                check_mask = ~finished
+                if np.any(check_mask):
+                    check_indices = live_indices[check_mask]
+                    check_points = live_next[:, check_mask].T
+                    distances = np.linalg.norm(
+                        check_points[:, None, :] - fixed_point_positions[None, :, :],
+                        axis=2,
+                    )
+                    if exclude_indices is not None:
+                        check_excludes = exclude_indices[check_indices]
+                        valid_excludes = (
+                            (check_excludes >= 0)
+                            & (check_excludes < distances.shape[1])
+                        )
+                        if np.any(valid_excludes):
+                            distances[
+                                np.arange(check_indices.size)[valid_excludes],
+                                check_excludes[valid_excludes],
+                            ] = np.inf
+                    nearest = np.argmin(distances, axis=1)
+                    nearest_distance = distances[np.arange(check_indices.size), nearest]
+                    converged = (
+                        np.isfinite(nearest_distance)
+                        & (nearest_distance <= termination_tol)
+                        & (speeds[check_mask] <= velocity_tol)
+                    )
+                    if np.any(converged):
+                        converged_indices = check_indices[converged]
+                        terminated_fixed_point_index[converged_indices] = nearest[converged]
+                        check_positions = np.flatnonzero(check_mask)
+                        finished[check_positions[converged]] = True
+
+            if np.any(finished):
+                finished_indices = live_indices[finished]
+                active[finished_indices] = False
+                current[:, finished_indices] = np.nan
+
+        trajectories = [trajectories_buffer[:lengths[idx], :, idx].copy() for idx in range(n_branches)]
+        endpoints = np.array([trajectory[-1].copy() for trajectory in trajectories], dtype=float)
+        return {
+            "trajectories": trajectories,
+            "endpoints": endpoints,
+            "step_velocity": step_velocity,
+            "terminated_fixed_point_index": terminated_fixed_point_index,
+            "terminated_at_boundary": terminated_at_boundary,
+            "terminated_nonfinite": terminated_nonfinite,
+        }
 
     def _integrate_manifold_branch(
         self,
@@ -88,60 +415,34 @@ class LandscapePhaseAnalysisBase:
         termination_tol=1e-2,
         velocity_tol=1e-3,
         return_metadata=False,
+        use_jax=False,
     ):
-        x_min, x_max = sorted(map(float, x_range))
-        y_min, y_max = sorted(map(float, y_range))
-        x_pad = 0.1 * max(x_max - x_min, termination_tol * 10.0)
-        y_pad = 0.1 * max(y_max - y_min, termination_tol * 10.0)
-
-        point = np.asarray(start, dtype=float).reshape(2)
-        trajectory = [point.copy()]
-        step_velocity = np.nan
-        terminated_fixed_point_index = None
-        terminated_at_boundary = False
-        terminated_nonfinite = False
-
-        for _ in range(int(n_steps)):
-            current = point.reshape(2, 1)
-            next_point = self._rk4_step(t, current, dt).reshape(2)
-            if not np.all(np.isfinite(next_point)):
-                terminated_nonfinite = True
-                break
-
-            trajectory.append(next_point.copy())
-            step_velocity = np.linalg.norm(next_point - point) / max(abs(dt), 1e-12)
-            point = next_point
-
-            if (
-                point[0] < x_min - x_pad
-                or point[0] > x_max + x_pad
-                or point[1] < y_min - y_pad
-                or point[1] > y_max + y_pad
-            ):
-                terminated_at_boundary = True
-                break
-
-            if fixed_point_positions is not None and fixed_point_positions.size:
-                distances = np.linalg.norm(fixed_point_positions - point[None, :], axis=1)
-                if exclude_index is not None and 0 <= int(exclude_index) < distances.size:
-                    distances[int(exclude_index)] = np.inf
-                nearest_index = int(np.argmin(distances))
-                if np.isfinite(distances[nearest_index]):
-                    if distances[nearest_index] <= termination_tol and step_velocity <= velocity_tol:
-                        terminated_fixed_point_index = nearest_index
-                        break
-
-        trajectory = np.asarray(trajectory, dtype=float)
+        exclude_indices = None if exclude_index is None else np.array([int(exclude_index)], dtype=int)
+        result = self._integrate_manifold_branches_batched(
+            self._get_all_pars(t),
+            np.asarray(start, dtype=float).reshape(2, 1),
+            dt,
+            n_steps,
+            x_range,
+            y_range,
+            fixed_point_positions=fixed_point_positions,
+            exclude_indices=exclude_indices,
+            termination_tol=termination_tol,
+            velocity_tol=velocity_tol,
+            use_jax=use_jax,
+        )
+        trajectory = np.asarray(result["trajectories"][0], dtype=float)
         if not return_metadata:
             return trajectory
 
+        terminated_fixed_point_index = int(result["terminated_fixed_point_index"][0])
         return {
-            "trajectory": trajectory,
-            "endpoint": trajectory[-1].copy(),
-            "step_velocity": float(step_velocity) if np.isfinite(step_velocity) else np.nan,
-            "terminated_fixed_point_index": terminated_fixed_point_index,
-            "terminated_at_boundary": bool(terminated_at_boundary),
-            "terminated_nonfinite": bool(terminated_nonfinite),
+            "trajectory": trajectory.copy(),
+            "endpoint": np.asarray(result["endpoints"][0], dtype=float).copy(),
+            "step_velocity": float(result["step_velocity"][0]),
+            "terminated_fixed_point_index": None if terminated_fixed_point_index < 0 else terminated_fixed_point_index,
+            "terminated_at_boundary": bool(result["terminated_at_boundary"][0]),
+            "terminated_nonfinite": bool(result["terminated_nonfinite"][0]),
         }
 
     @staticmethod
@@ -191,40 +492,23 @@ class LandscapePhaseAnalysisBase:
         if abs(current_radius - previous_radius) > max(fp_tol * 2.0, 0.25 * mean_radius):
             return None
 
+        cycle_trajectory = traj[-best_lag - 1:].copy()
+        cycle_centroid = cycle_trajectory.mean(axis=0)
+        cycle_radial = np.linalg.norm(cycle_trajectory - cycle_centroid, axis=1)
+        cycle_mean_radius = float(cycle_radial.mean())
+        cycle_radius_span = float(cycle_radial.max() - cycle_radial.min())
+
         return {
-            "center": centroid,
-            "radius_mean": mean_radius,
-            "radius_span": radius_span,
+            "center": cycle_centroid,
+            "radius_mean": cycle_mean_radius,
+            "radius_span": cycle_radius_span,
             "period_steps": best_lag,
             "period": best_lag * dt,
-            "trajectory": traj.copy(),
+            "trajectory": cycle_trajectory,
             "recurrence_distance": best_distance,
             "segment_error": segment_error,
         }
 
-    @staticmethod
-    def _trajectory_set_distance(traj, reference_traj, sample_count=64):
-        if traj.size == 0 or reference_traj.size == 0:
-            return np.inf, np.inf
-
-        if traj.shape[0] > sample_count:
-            traj_idx = np.linspace(0, traj.shape[0] - 1, sample_count, dtype=int)
-            traj_sample = traj[traj_idx]
-        else:
-            traj_sample = traj
-
-        if reference_traj.shape[0] > sample_count:
-            ref_idx = np.linspace(0, reference_traj.shape[0] - 1, sample_count, dtype=int)
-            reference_sample = reference_traj[ref_idx]
-        else:
-            reference_sample = reference_traj
-
-        distances = np.linalg.norm(
-            traj_sample[:, None, :] - reference_sample[None, :, :],
-            axis=2,
-        )
-        nearest = np.min(distances, axis=1)
-        return float(np.mean(nearest)), float(np.max(nearest))
 
     @staticmethod
     def _mark_grid_point(mask, iy, ix, thickness=1):
@@ -384,13 +668,17 @@ class LandscapePhaseAnalysisBase:
         stability_tol,
         termination_tol,
         velocity_tol,
+        use_jax=False,
     ):
         points = np.asarray(fixed_points["points"], dtype=float)
         span = max(abs(float(x_range[1]) - float(x_range[0])), abs(float(y_range[1]) - float(y_range[0])), 1.0)
         seed_offset = float(perturbation) if perturbation is not None else 1e-3 * span
         branch_dt = abs(float(step_size))
 
-        saddles = []
+        saddle_entries = []
+        stable_seeds = []
+        unstable_seeds = []
+        branch_excludes = []
         saddle_indices = np.flatnonzero(np.asarray(fixed_points["stability"], dtype=object) == "saddle")
         for fixed_index in saddle_indices:
             point = points[fixed_index]
@@ -415,45 +703,12 @@ class LandscapePhaseAnalysisBase:
             stable_vector /= stable_norm
             unstable_vector /= unstable_norm
 
-            stable_branches = []
-            unstable_branches = []
-            unstable_meta = []
             for sign in (-1.0, 1.0):
-                stable_seed = point + sign * seed_offset * stable_vector
-                unstable_seed = point + sign * seed_offset * unstable_vector
+                stable_seeds.append(point + sign * seed_offset * stable_vector)
+                unstable_seeds.append(point + sign * seed_offset * unstable_vector)
+                branch_excludes.append(int(fixed_index))
 
-                stable_branch = self._integrate_manifold_branch(
-                    t,
-                    stable_seed,
-                    -branch_dt,
-                    n_steps,
-                    x_range,
-                    y_range,
-                    fixed_point_positions=points,
-                    exclude_index=int(fixed_index),
-                    termination_tol=termination_tol,
-                    velocity_tol=velocity_tol,
-                )
-                unstable_branch_info = self._integrate_manifold_branch(
-                    t,
-                    unstable_seed,
-                    branch_dt,
-                    n_steps,
-                    x_range,
-                    y_range,
-                    fixed_point_positions=points,
-                    exclude_index=int(fixed_index),
-                    termination_tol=termination_tol,
-                    velocity_tol=velocity_tol,
-                    return_metadata=True,
-                )
-                unstable_branch = np.asarray(unstable_branch_info["trajectory"], dtype=float)
-
-                stable_branches.append(np.vstack((point.copy(), stable_branch)))
-                unstable_branches.append(np.vstack((point.copy(), unstable_branch)))
-                unstable_meta.append(unstable_branch_info)
-
-            saddles.append(
+            saddle_entries.append(
                 {
                     "fixed_point_index": int(fixed_index),
                     "point": point.copy(),
@@ -463,11 +718,81 @@ class LandscapePhaseAnalysisBase:
                     "unstable_eigenvalue": eigenvalues[unstable_index],
                     "stable_vector": stable_vector.copy(),
                     "unstable_vector": unstable_vector.copy(),
-                    "stable": stable_branches,
-                    "unstable": unstable_branches,
-                    "_unstable_meta": unstable_meta,
                 }
             )
+
+        if stable_seeds:
+            pars = self._get_all_pars(t)
+            branch_excludes = np.asarray(branch_excludes, dtype=int)
+            stable_batch = self._integrate_manifold_branches_batched(
+                pars,
+                np.column_stack(stable_seeds),
+                -branch_dt,
+                n_steps,
+                x_range,
+                y_range,
+                fixed_point_positions=points,
+                exclude_indices=branch_excludes,
+                termination_tol=termination_tol,
+                velocity_tol=velocity_tol,
+                use_jax=use_jax,
+            )
+            unstable_batch = self._integrate_manifold_branches_batched(
+                pars,
+                np.column_stack(unstable_seeds),
+                branch_dt,
+                n_steps,
+                x_range,
+                y_range,
+                fixed_point_positions=points,
+                exclude_indices=branch_excludes,
+                termination_tol=termination_tol,
+                velocity_tol=velocity_tol,
+                use_jax=use_jax,
+            )
+        else:
+            stable_batch = {
+                "trajectories": [],
+            }
+            unstable_batch = {
+                "trajectories": [],
+                "endpoints": np.empty((0, 2), dtype=float),
+                "step_velocity": np.empty((0,), dtype=float),
+                "terminated_fixed_point_index": np.empty((0,), dtype=int),
+                "terminated_at_boundary": np.empty((0,), dtype=bool),
+                "terminated_nonfinite": np.empty((0,), dtype=bool),
+            }
+
+        saddles = []
+        branch_index = 0
+        for entry in saddle_entries:
+            point = np.asarray(entry["point"], dtype=float)
+            stable_branches = []
+            unstable_branches = []
+            unstable_meta = []
+            for _ in (-1.0, 1.0):
+                stable_branch = np.asarray(stable_batch["trajectories"][branch_index], dtype=float)
+                unstable_branch = np.asarray(unstable_batch["trajectories"][branch_index], dtype=float)
+                stable_branches.append(np.vstack((point.copy(), stable_branch)))
+                unstable_branches.append(np.vstack((point.copy(), unstable_branch)))
+                unstable_target = int(unstable_batch["terminated_fixed_point_index"][branch_index])
+                unstable_meta.append(
+                    {
+                        "trajectory": unstable_branch.copy(),
+                        "endpoint": np.asarray(unstable_batch["endpoints"][branch_index], dtype=float).copy(),
+                        "step_velocity": float(unstable_batch["step_velocity"][branch_index]),
+                        "terminated_fixed_point_index": None if unstable_target < 0 else unstable_target,
+                        "terminated_at_boundary": bool(unstable_batch["terminated_at_boundary"][branch_index]),
+                        "terminated_nonfinite": bool(unstable_batch["terminated_nonfinite"][branch_index]),
+                    }
+                )
+                branch_index += 1
+
+            saddle = dict(entry)
+            saddle["stable"] = stable_branches
+            saddle["unstable"] = unstable_branches
+            saddle["_unstable_meta"] = unstable_meta
+            saddles.append(saddle)
 
         return {
             "saddles": saddles,
@@ -738,12 +1063,11 @@ class LandscapePhaseAnalysisBase:
         attractors.append(cluster)
         return cluster
 
-    def _classify_seed_attractor(
+    def _classify_seed_attractors_batched_jax(
         self,
-        t,
-        seed,
+        pars,
+        seeds,
         fixed_points,
-        attractors,
         dt,
         n_steps,
         fp_tol,
@@ -753,19 +1077,217 @@ class LandscapePhaseAnalysisBase:
         x_range=None,
         y_range=None,
     ):
+        jax, jnp = self._jax_modules()
+        seeds = np.asarray(seeds, dtype=float)
+        n_seeds = seeds.shape[1]
         points = np.asarray(fixed_points["points"], dtype=float)
         attracting_indices = np.flatnonzero(np.asarray(fixed_points["attracting_mask"], dtype=bool))
         attractor_points = points[attracting_indices] if attracting_indices.size else np.empty((0, 2), dtype=float)
-        fixed_label_map = {
-            attractor.get("fixed_point_index"): attractor["id"]
-            for attractor in attractors
-            if attractor["type"] == "fixed_point"
+        has_attractors = attractor_points.size > 0
+
+        tail_len = max(int(cycle_window), 32)
+        convergence_start = max(4, int(transient_fraction * n_steps))
+        convergence_start = min(convergence_start, max(n_steps - 1, 0))
+        tail_start = max(0, int(n_steps) - tail_len)
+        dt_scale = max(abs(float(dt)), 1e-12)
+        has_bounds = x_range is not None and y_range is not None
+        if has_bounds:
+            x_min, x_max = sorted(map(float, x_range))
+            y_min, y_max = sorted(map(float, y_range))
+            x_pad = 0.25 * max(x_max - x_min, fp_tol * 10.0)
+            y_pad = 0.25 * max(y_max - y_min, fp_tol * 10.0)
+        else:
+            x_min = x_max = y_min = y_max = x_pad = y_pad = 0.0
+
+        jax_pars = {
+            key: (jnp.asarray(value, dtype=float) if key != "empty" else value)
+            for key, value in pars.items()
+        }
+        attractor_points_jax = jnp.asarray(attractor_points, dtype=float)
+        attracting_indices_jax = jnp.asarray(attracting_indices, dtype=int)
+
+        def rk4(q):
+            k1 = self._eval_flow(jax_pars, q, return_potentials=False, use_jax=True)
+            k2 = self._eval_flow(jax_pars, q + 0.5 * dt * k1, return_potentials=False, use_jax=True)
+            k3 = self._eval_flow(jax_pars, q + 0.5 * dt * k2, return_potentials=False, use_jax=True)
+            k4 = self._eval_flow(jax_pars, q + dt * k3, return_potentials=False, use_jax=True)
+            return q + dt * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+
+        def scan_step(state, step):
+            positions, active, fixed_indices, escaped, nonfinite, tail_history, tail_index, stored_steps = state
+            safe_positions = jnp.where(active[None, :], positions, 0.0)
+            next_positions = rk4(safe_positions)
+            finite = jnp.all(jnp.isfinite(next_positions), axis=0)
+            live = active & finite
+            nonfinite_now = active & ~finite
+            speeds = jnp.linalg.norm(next_positions - safe_positions, axis=0) / dt_scale
+
+            boundary = jnp.zeros(n_seeds, dtype=bool)
+            if has_bounds:
+                boundary = live & (
+                    (next_positions[0] < x_min - x_pad)
+                    | (next_positions[0] > x_max + x_pad)
+                    | (next_positions[1] < y_min - y_pad)
+                    | (next_positions[1] > y_max + y_pad)
+                )
+
+            converged = jnp.zeros(n_seeds, dtype=bool)
+            fixed_updates = -jnp.ones(n_seeds, dtype=int)
+            if has_attractors:
+                distances = jnp.linalg.norm(next_positions.T[:, None, :] - attractor_points_jax[None, :, :], axis=2)
+                nearest = jnp.argmin(distances, axis=1)
+                nearest_distance = distances[jnp.arange(n_seeds), nearest]
+                unresolved = live & ~boundary
+                converged = (
+                    (step >= convergence_start)
+                    & unresolved
+                    & (nearest_distance <= fp_tol)
+                    & (speeds <= vel_tol)
+                )
+                fixed_updates = attracting_indices_jax[nearest]
+
+            finished = nonfinite_now | boundary | converged
+            active = active & ~finished
+            positions = jnp.where(active[None, :], next_positions, jnp.nan)
+            fixed_indices = jnp.where(converged, fixed_updates, fixed_indices)
+            escaped = escaped | boundary
+            nonfinite = nonfinite | nonfinite_now
+
+            should_store = step >= tail_start
+            tail_history = jax.lax.cond(
+                should_store,
+                lambda history: history.at[tail_index].set(positions),
+                lambda history: history,
+                tail_history,
+            )
+            tail_index = jnp.where(should_store, (tail_index + 1) % tail_len, tail_index)
+            stored_steps = jnp.where(should_store, jnp.minimum(stored_steps + 1, tail_len), stored_steps)
+            return (
+                positions,
+                active,
+                fixed_indices,
+                escaped,
+                nonfinite,
+                tail_history,
+                tail_index,
+                stored_steps,
+            ), None
+
+        @jax.jit
+        def run_scan(seeds_jax):
+            state = (
+                seeds_jax,
+                jnp.ones(n_seeds, dtype=bool),
+                -jnp.ones(n_seeds, dtype=int),
+                jnp.zeros(n_seeds, dtype=bool),
+                jnp.zeros(n_seeds, dtype=bool),
+                jnp.full((tail_len, 2, n_seeds), jnp.nan, dtype=float),
+                jnp.asarray(0, dtype=int),
+                jnp.asarray(0, dtype=int),
+            )
+            return jax.lax.scan(scan_step, state, jnp.arange(int(n_steps)))
+
+        final_state, _ = run_scan(jnp.asarray(seeds, dtype=float))
+        _, _, fixed_point_indices, escaped_mask, nonfinite_mask, tail_history, tail_index, stored_steps = final_state
+        tail_history = np.asarray(tail_history, dtype=float)
+        tail_index = int(np.asarray(tail_index))
+        stored_steps = int(np.asarray(stored_steps))
+        if stored_steps == 0:
+            chronological_tail = np.empty((0, 2, n_seeds), dtype=float)
+        elif stored_steps < tail_len:
+            chronological_tail = tail_history[:stored_steps].copy()
+        else:
+            chronological_tail = np.concatenate(
+                (tail_history[tail_index:], tail_history[:tail_index]),
+                axis=0,
+            )
+
+        fixed_point_indices = np.asarray(fixed_point_indices, dtype=int)
+        escaped_mask = np.asarray(escaped_mask, dtype=bool)
+        nonfinite_mask = np.asarray(nonfinite_mask, dtype=bool)
+        if attractor_points.size and chronological_tail.shape[0]:
+            unresolved_indices = np.flatnonzero(
+                (fixed_point_indices < 0)
+                & ~escaped_mask
+                & ~nonfinite_mask
+            )
+            if unresolved_indices.size:
+                final_points = chronological_tail[-1][:, unresolved_indices].T
+                distances = np.linalg.norm(
+                    final_points[:, None, :] - attractor_points[None, :, :],
+                    axis=2,
+                )
+                nearest = np.argmin(distances, axis=1)
+                nearest_distance = distances[np.arange(unresolved_indices.size), nearest]
+                close_to_fixed = nearest_distance < max(fp_tol * 4.0, 0.1)
+                if np.any(close_to_fixed):
+                    fixed_point_indices[unresolved_indices[close_to_fixed]] = attracting_indices[nearest[close_to_fixed]]
+
+        return {
+            "fixed_point_indices": fixed_point_indices,
+            "chronological_tail": chronological_tail,
+            "escaped_mask": escaped_mask,
+            "nonfinite_mask": nonfinite_mask,
         }
 
-        point = np.asarray(seed, dtype=float).reshape(2)
+    def _classify_seed_attractors_batched(
+        self,
+        pars,
+        seeds,
+        fixed_points,
+        dt,
+        n_steps,
+        fp_tol,
+        vel_tol,
+        transient_fraction=0.5,
+        cycle_window=128,
+        x_range=None,
+        y_range=None,
+        use_jax=False,
+    ):
+        seeds, _ = self._coerce_phase_coordinate_array(seeds)
+        n_seeds = seeds.shape[1]
+        if n_seeds == 0:
+            return {
+                "fixed_point_indices": np.empty((0,), dtype=int),
+                "chronological_tail": np.empty((0, 2, 0), dtype=float),
+                "escaped_mask": np.empty((0,), dtype=bool),
+                "nonfinite_mask": np.empty((0,), dtype=bool),
+            }
+        if use_jax:
+            return self._classify_seed_attractors_batched_jax(
+                pars,
+                seeds,
+                fixed_points,
+                dt,
+                n_steps,
+                fp_tol,
+                vel_tol,
+                transient_fraction=transient_fraction,
+                cycle_window=cycle_window,
+                x_range=x_range,
+                y_range=y_range,
+            )
+
+        points = np.asarray(fixed_points["points"], dtype=float)
+        attracting_indices = np.flatnonzero(np.asarray(fixed_points["attracting_mask"], dtype=bool))
+        attractor_points = points[attracting_indices] if attracting_indices.size else np.empty((0, 2), dtype=float)
+
+        positions = seeds.copy()
+        active = np.ones(n_seeds, dtype=bool)
+        fixed_point_indices = np.full(n_seeds, -1, dtype=int)
+        escaped_mask = np.zeros(n_seeds, dtype=bool)
+        nonfinite_mask = np.zeros(n_seeds, dtype=bool)
+
         tail_len = max(int(cycle_window), 32)
-        tail_history = []
+        tail_history = np.full((tail_len, 2, n_seeds), np.nan, dtype=float)
+        tail_index = 0
+        stored_steps = 0
+
         convergence_start = max(4, int(transient_fraction * n_steps))
+        convergence_start = min(convergence_start, max(n_steps - 1, 0))
+        tail_start = max(0, int(n_steps) - tail_len)
+        dt_scale = max(abs(float(dt)), 1e-12)
 
         if x_range is not None and y_range is not None:
             x_min, x_max = sorted(map(float, x_range))
@@ -777,64 +1299,99 @@ class LandscapePhaseAnalysisBase:
             x_pad = y_pad = 0.0
 
         for step in range(int(n_steps)):
-            current = point.reshape(2, 1)
-            next_point = self._rk4_step(t, current, dt).reshape(2)
-            if not np.all(np.isfinite(next_point)):
-                return None
+            if not np.any(active):
+                break
 
-            speed = np.linalg.norm(next_point - point) / max(abs(dt), 1e-12)
-            point = next_point
+            active_indices = np.flatnonzero(active)
+            current = positions[:, active_indices]
+            next_positions = self._rk4_step_batched(pars, current, dt, use_jax=use_jax)
+            finite_mask = np.all(np.isfinite(next_positions), axis=0)
 
-            if x_min is not None:
-                if (
-                    point[0] < x_min - x_pad
-                    or point[0] > x_max + x_pad
-                    or point[1] < y_min - y_pad
-                    or point[1] > y_max + y_pad
-                ):
-                    return None
+            if np.any(~finite_mask):
+                invalid_indices = active_indices[~finite_mask]
+                nonfinite_mask[invalid_indices] = True
+                active[invalid_indices] = False
+                positions[:, invalid_indices] = np.nan
 
-            if step >= convergence_start and attractor_points.size:
-                distances = np.linalg.norm(attractor_points - point[None, :], axis=1)
-                nearest = int(np.argmin(distances))
-                if distances[nearest] <= fp_tol and speed <= vel_tol:
-                    fixed_index = int(attracting_indices[nearest])
-                    return {
-                        "type": "fixed_point",
-                        "label": int(fixed_label_map[fixed_index]),
-                        "fixed_point_index": fixed_index,
-                    }
+            if np.any(finite_mask):
+                live_indices = active_indices[finite_mask]
+                live_current = current[:, finite_mask]
+                live_positions = next_positions[:, finite_mask]
+                speeds = np.linalg.norm(live_positions - live_current, axis=0) / dt_scale
+                positions[:, live_indices] = live_positions
 
-            if step >= max(0, n_steps - tail_len):
-                tail_history.append(point.copy())
+                boundary = np.zeros(live_indices.size, dtype=bool)
+                if x_min is not None:
+                    boundary = (
+                        (live_positions[0] < x_min - x_pad)
+                        | (live_positions[0] > x_max + x_pad)
+                        | (live_positions[1] < y_min - y_pad)
+                        | (live_positions[1] > y_max + y_pad)
+                    )
+                if np.any(boundary):
+                    boundary_indices = live_indices[boundary]
+                    escaped_mask[boundary_indices] = True
+                    active[boundary_indices] = False
+                    positions[:, boundary_indices] = np.nan
 
-        if not tail_history:
-            return None
+                if step >= convergence_start and attractor_points.size:
+                    unresolved_mask = ~boundary
+                    if np.any(unresolved_mask):
+                        unresolved_indices = live_indices[unresolved_mask]
+                        unresolved_positions = live_positions[:, unresolved_mask]
+                        unresolved_speeds = speeds[unresolved_mask]
+                        distances = np.linalg.norm(
+                            unresolved_positions.T[:, None, :] - attractor_points[None, :, :],
+                            axis=2,
+                        )
+                        nearest = np.argmin(distances, axis=1)
+                        nearest_distance = distances[np.arange(unresolved_indices.size), nearest]
+                        converged = (nearest_distance <= fp_tol) & (unresolved_speeds <= vel_tol)
+                        if np.any(converged):
+                            converged_indices = unresolved_indices[converged]
+                            fixed_point_indices[converged_indices] = attracting_indices[nearest[converged]]
+                            active[converged_indices] = False
+                            positions[:, converged_indices] = np.nan
 
-        traj = np.asarray(tail_history, dtype=float)
-        if traj.shape[0] < 16:
-            return None
+            if step >= tail_start:
+                tail_history[tail_index] = positions
+                tail_index = (tail_index + 1) % tail_len
+                stored_steps = min(stored_steps + 1, tail_len)
 
-        if attractor_points.size:
-            end_distance = np.min(np.linalg.norm(traj[-1][None, :] - attractor_points, axis=1))
-            if end_distance < max(fp_tol * 4.0, 0.1):
-                nearest = int(np.argmin(np.linalg.norm(attractor_points - traj[-1][None, :], axis=1)))
-                fixed_index = int(attracting_indices[nearest])
-                return {
-                    "type": "fixed_point",
-                    "label": int(fixed_label_map[fixed_index]),
-                    "fixed_point_index": fixed_index,
-                }
+        if stored_steps == 0:
+            chronological_tail = np.empty((0, 2, n_seeds), dtype=float)
+        elif stored_steps < tail_len:
+            chronological_tail = tail_history[:stored_steps].copy()
+        else:
+            chronological_tail = np.concatenate(
+                (tail_history[tail_index:], tail_history[:tail_index]),
+                axis=0,
+            )
 
-        if not self._allows_limit_cycles():
-            return None
+        if attractor_points.size and chronological_tail.shape[0]:
+            unresolved_indices = np.flatnonzero(
+                (fixed_point_indices < 0)
+                & ~escaped_mask
+                & ~nonfinite_mask
+            )
+            if unresolved_indices.size:
+                final_points = chronological_tail[-1][:, unresolved_indices].T
+                distances = np.linalg.norm(
+                    final_points[:, None, :] - attractor_points[None, :, :],
+                    axis=2,
+                )
+                nearest = np.argmin(distances, axis=1)
+                nearest_distance = distances[np.arange(unresolved_indices.size), nearest]
+                close_to_fixed = nearest_distance < max(fp_tol * 4.0, 0.1)
+                if np.any(close_to_fixed):
+                    fixed_point_indices[unresolved_indices[close_to_fixed]] = attracting_indices[nearest[close_to_fixed]]
 
-        signature = self._detect_cycle_signature(traj, dt, fp_tol, vel_tol)
-        if signature is None:
-            return None
-
-        cluster = self._match_or_register_cycle_attractor(signature, attractors, fp_tol)
-        return {"type": "cycle", "label": int(cluster["id"]), "cluster": cluster}
+        return {
+            "fixed_point_indices": fixed_point_indices,
+            "chronological_tail": chronological_tail,
+            "escaped_mask": escaped_mask,
+            "nonfinite_mask": nonfinite_mask,
+        }
 
     def find_fixed_points(
         self,
@@ -845,6 +1402,7 @@ class LandscapePhaseAnalysisBase:
         root_tol=1e-9,
         dedup_tol=1e-6,
         stability_tol=1e-6,
+        use_jax=False,
     ):
         try:
             from scipy.optimize import root
@@ -858,6 +1416,39 @@ class LandscapePhaseAnalysisBase:
         x_seeds = np.linspace(x_min, x_max, n_grid)
         y_seeds = np.linspace(y_min, y_max, n_grid)
         residual_tol = max(root_tol * 1000.0, 1e-6)
+        pars = self._get_all_pars(t)
+        if use_jax:
+            jax, jnp = self._jax_modules()
+            jax_pars = {
+                key: (jnp.asarray(value, dtype=float) if key != "empty" else value)
+                for key, value in pars.items()
+            }
+
+            def flow_point_jax(point):
+                coords = point.reshape(2, 1)
+                return self._eval_flow(jax_pars, coords, return_potentials=False, use_jax=True).reshape(2)
+
+            def jac_point_jax(point):
+                jac_h = 1e-4
+                deltas = jac_h * jnp.eye(2, dtype=float)
+                flow_plus = jax.vmap(lambda delta: flow_point_jax(point + delta))(deltas)
+                flow_minus = jax.vmap(lambda delta: flow_point_jax(point - delta))(deltas)
+                return ((flow_plus - flow_minus) / (2.0 * jac_h)).T
+
+            flow_point_jit = jax.jit(flow_point_jax)
+            jac_point_jit = jax.jit(jac_point_jax)
+
+            def flow_point(point):
+                return np.asarray(flow_point_jit(jnp.asarray(point, dtype=float)), dtype=float)
+
+            def jac_point(point):
+                return np.asarray(jac_point_jit(jnp.asarray(point, dtype=float)), dtype=float)
+        else:
+            def flow_point(point):
+                return self._flow_vector_from_pars(pars, point)
+
+            def jac_point(point):
+                return self._numerical_jacobian_from_pars(pars, point)
 
         unique_points = []
         residual_norms = []
@@ -867,9 +1458,9 @@ class LandscapePhaseAnalysisBase:
                 guess = np.array([x0, y0], dtype=float)
                 try:
                     solution = root(
-                        lambda p: self._flow_vector(t, p),
+                        flow_point,
                         guess,
-                        jac=lambda p: self.jacobian(t, p, method="auto"),
+                        jac=jac_point,
                         tol=root_tol,
                     )
                 except Exception:
@@ -889,7 +1480,7 @@ class LandscapePhaseAnalysisBase:
                 ):
                     continue
 
-                residual = float(np.linalg.norm(self._flow_vector(t, point)))
+                residual = float(np.linalg.norm(flow_point(point)))
                 if residual > residual_tol:
                     continue
 
@@ -928,7 +1519,7 @@ class LandscapePhaseAnalysisBase:
         attracting_mask = np.zeros(points.shape[0], dtype=bool)
 
         for idx, point in enumerate(points):
-            jac = np.asarray(self.jacobian(t, point, method="auto"), dtype=float).reshape(2, 2)
+            jac = np.asarray(jac_point(point), dtype=float).reshape(2, 2)
             eigvals = np.linalg.eigvals(jac)
             fixed_type = self._classify_eigenvalues(eigvals, stability_tol)
             jacobians[idx] = jac
@@ -957,11 +1548,12 @@ class LandscapePhaseAnalysisBase:
         stability_tol=1e-6,
         termination_tol=1e-2,
         velocity_tol=1e-3,
+        use_jax=False,
     ):
         if fixed_points is None:
             if x_range is None or y_range is None:
                 raise ValueError("x_range and y_range are required when fixed_points is not provided.")
-            fixed_points = self.find_fixed_points(t, x_range, y_range)
+            fixed_points = self.find_fixed_points(t, x_range, y_range, use_jax=use_jax)
 
         points = np.asarray(fixed_points["points"], dtype=float)
         if x_range is None:
@@ -990,6 +1582,7 @@ class LandscapePhaseAnalysisBase:
             stability_tol,
             termination_tol,
             velocity_tol,
+            use_jax=use_jax,
         )
         attractors, _ = self._build_fixed_point_attractors(fixed_points)
         self._annotate_saddle_connections(
@@ -1002,305 +1595,6 @@ class LandscapePhaseAnalysisBase:
             termination_tol=termination_tol,
         )
         return saddle_manifolds
-
-    def find_attractor_basins_heuristic(
-        self,
-        t,
-        xx,
-        yy,
-        fixed_points=None,
-        dt=0.05,
-        n_steps=800,
-        fp_tol=1e-2,
-        vel_tol=1e-3,
-        transient_fraction=0.5,
-        cycle_window=128,
-    ):
-        xx = np.asarray(xx, dtype=float)
-        yy = np.asarray(yy, dtype=float)
-        if xx.shape != yy.shape:
-            raise ValueError("xx and yy must have the same shape.")
-
-        if fixed_points is None:
-            fixed_points = self.find_fixed_points(
-                t,
-                (float(np.min(xx)), float(np.max(xx))),
-                (float(np.min(yy)), float(np.max(yy))),
-            )
-
-        points = np.asarray(fixed_points["points"], dtype=float)
-        attracting_indices = np.flatnonzero(np.asarray(fixed_points["attracting_mask"], dtype=bool))
-        attractors, fixed_label_map = self._build_fixed_point_attractors(fixed_points)
-
-        positions = np.vstack((xx.ravel(), yy.ravel())).astype(float)
-        n_points = positions.shape[1]
-        labels = np.full(n_points, -1, dtype=int)
-        active = np.ones(n_points, dtype=bool)
-
-        x_min, x_max = float(np.min(xx)), float(np.max(xx))
-        y_min, y_max = float(np.min(yy)), float(np.max(yy))
-        x_pad = 0.25 * max(x_max - x_min, fp_tol * 10.0)
-        y_pad = 0.25 * max(y_max - y_min, fp_tol * 10.0)
-
-        tail_len = max(int(cycle_window), 32)
-        tail_history = np.empty((tail_len, 2, n_points), dtype=float)
-        tail_index = 0
-        stored_steps = 0
-
-        attractor_points = points[attracting_indices] if attracting_indices.size else np.empty((0, 2), dtype=float)
-        convergence_start = max(4, int(transient_fraction * n_steps))
-        convergence_start = min(convergence_start, max(n_steps - 1, 0))
-        tail_start = max(0, n_steps - tail_len)
-
-        for step in range(n_steps):
-            if not np.any(active):
-                break
-
-            active_indices = np.flatnonzero(active)
-            current = positions[:, active_indices]
-            next_positions = self._rk4_step(t, current, dt)
-            velocities = (next_positions - current) / max(dt, 1e-12)
-            positions[:, active_indices] = next_positions
-
-            escaped = (
-                ~np.all(np.isfinite(next_positions), axis=0)
-                | (next_positions[0] < x_min - x_pad)
-                | (next_positions[0] > x_max + x_pad)
-                | (next_positions[1] < y_min - y_pad)
-                | (next_positions[1] > y_max + y_pad)
-            )
-            if np.any(escaped):
-                active[active_indices[escaped]] = False
-
-            if step >= convergence_start and attractor_points.size:
-                live_mask = ~escaped
-                live_indices = active_indices[live_mask]
-                if live_indices.size:
-                    live_positions = next_positions[:, live_mask]
-                    speed = np.linalg.norm(velocities[:, live_mask], axis=0)
-                    deltas = live_positions.T[:, None, :] - attractor_points[None, :, :]
-                    distances = np.linalg.norm(deltas, axis=2)
-                    nearest = np.argmin(distances, axis=1)
-                    nearest_distance = distances[np.arange(live_indices.size), nearest]
-                    converged = (nearest_distance <= fp_tol) & (speed <= vel_tol)
-                    if np.any(converged):
-                        converged_indices = live_indices[converged]
-                        labels[converged_indices] = np.array(
-                            [fixed_label_map[int(attracting_indices[idx])] for idx in nearest[converged]],
-                            dtype=int,
-                        )
-                        active[converged_indices] = False
-
-            if step >= tail_start:
-                tail_history[tail_index] = positions
-                tail_index = (tail_index + 1) % tail_len
-                stored_steps = min(stored_steps + 1, tail_len)
-
-        if stored_steps == 0:
-            chronological_tail = positions[None, :, :].copy()
-        elif stored_steps < tail_len:
-            chronological_tail = tail_history[:stored_steps].copy()
-        else:
-            chronological_tail = np.concatenate(
-                (tail_history[tail_index:], tail_history[:tail_index]),
-                axis=0,
-            )
-
-        cycle_clusters = []
-        if self._allows_limit_cycles():
-            unresolved_indices = np.flatnonzero(labels == -1)
-            for point_index in unresolved_indices:
-                traj = chronological_tail[:, :, point_index]
-                finite_rows = np.all(np.isfinite(traj), axis=1)
-                traj = traj[finite_rows]
-                if traj.shape[0] != chronological_tail.shape[0] or traj.shape[0] < 16:
-                    continue
-
-                if attractor_points.size:
-                    end_distance = np.min(np.linalg.norm(traj[-1][None, :] - attractor_points, axis=1))
-                    if end_distance < max(fp_tol * 4.0, 0.1):
-                        continue
-
-                signature = self._detect_cycle_signature(traj, dt, fp_tol, vel_tol)
-                if signature is None:
-                    continue
-
-                cluster_match = None
-                for cluster in cycle_clusters:
-                    center_delta = np.linalg.norm(signature["center"] - cluster["center"])
-                    radius_delta = abs(signature["radius_mean"] - cluster["radius_mean"])
-                    period_delta = abs(signature["period_steps"] - cluster["period_steps"])
-                    period_tol = max(8, int(0.5 * max(signature["period_steps"], cluster["period_steps"])))
-                    if (
-                        center_delta <= max(fp_tol * 12.0, 0.75)
-                        and radius_delta <= max(fp_tol * 12.0, 0.75)
-                        and period_delta <= period_tol
-                    ):
-                        cluster_match = cluster
-                        break
-
-                if cluster_match is None:
-                    label_id = len(attractors)
-                    cluster_match = {
-                        "id": label_id,
-                        "type": "cycle",
-                        "center": signature["center"],
-                        "radius_mean": signature["radius_mean"],
-                        "radius_span": signature["radius_span"],
-                        "period_steps": signature["period_steps"],
-                        "period": signature["period"],
-                        "recurrence_distance": signature["recurrence_distance"],
-                        "trajectory": signature["trajectory"],
-                        "members": [int(point_index)],
-                    }
-                    attractors.append(cluster_match)
-                    cycle_clusters.append(cluster_match)
-                else:
-                    cluster_match["members"].append(int(point_index))
-                    if signature["recurrence_distance"] < cluster_match["recurrence_distance"]:
-                        cluster_match["recurrence_distance"] = signature["recurrence_distance"]
-                        cluster_match["trajectory"] = signature["trajectory"]
-
-                labels[point_index] = cluster_match["id"]
-
-            if cycle_clusters:
-                remaining_indices = np.flatnonzero(labels == -1)
-                for point_index in remaining_indices:
-                    traj = chronological_tail[:, :, point_index]
-                    finite_rows = np.all(np.isfinite(traj), axis=1)
-                    traj = traj[finite_rows]
-                    if traj.shape[0] != chronological_tail.shape[0] or traj.shape[0] < 16:
-                        continue
-
-                    if attractor_points.size:
-                        end_distance = np.min(np.linalg.norm(traj[-1][None, :] - attractor_points, axis=1))
-                        if end_distance < max(fp_tol * 4.0, 0.1):
-                            continue
-
-                    step_norms = np.linalg.norm(np.diff(traj, axis=0), axis=1)
-                    if step_norms.size == 0 or step_norms.mean() / max(dt, 1e-12) < vel_tol * 0.5:
-                        continue
-
-                    centroid = traj.mean(axis=0)
-                    radial = np.linalg.norm(traj - centroid, axis=1)
-                    radius_mean = float(radial.mean())
-                    if radius_mean < fp_tol:
-                        continue
-
-                    for cluster in cycle_clusters:
-                        center_delta = np.linalg.norm(centroid - cluster["center"])
-                        radius_delta = abs(radius_mean - cluster["radius_mean"])
-                        if (
-                            center_delta <= max(fp_tol * 20.0, 1.0)
-                            and radius_delta <= max(fp_tol * 20.0, 1.0)
-                        ):
-                            cluster["members"].append(int(point_index))
-                            labels[point_index] = cluster["id"]
-                            break
-
-            if cycle_clusters:
-                remaining_indices = np.flatnonzero(labels == -1)
-                for point_index in remaining_indices:
-                    traj = chronological_tail[:, :, point_index]
-                    finite_rows = np.all(np.isfinite(traj), axis=1)
-                    traj = traj[finite_rows]
-                    if traj.shape[0] != chronological_tail.shape[0] or traj.shape[0] < 16:
-                        continue
-
-                    if attractor_points.size:
-                        end_distance = np.min(np.linalg.norm(traj[-1][None, :] - attractor_points, axis=1))
-                        if end_distance < max(fp_tol * 4.0, 0.1):
-                            continue
-
-                    step_norms = np.linalg.norm(np.diff(traj, axis=0), axis=1)
-                    if step_norms.size == 0 or step_norms.mean() / max(dt, 1e-12) < vel_tol * 0.5:
-                        continue
-
-                    centroid = traj.mean(axis=0)
-                    radial = np.linalg.norm(traj - centroid, axis=1)
-                    radius_mean = float(radial.mean())
-                    if radius_mean < fp_tol:
-                        continue
-
-                    best_cluster = None
-                    best_score = np.inf
-                    for cluster in cycle_clusters:
-                        center_delta = np.linalg.norm(centroid - cluster["center"])
-                        radius_delta = abs(radius_mean - cluster["radius_mean"])
-                        if (
-                            center_delta > max(fp_tol * 30.0, 1.5)
-                            or radius_delta > max(fp_tol * 30.0, 1.5)
-                        ):
-                            continue
-
-                        mean_distance, max_distance = self._trajectory_set_distance(
-                            traj,
-                            np.asarray(cluster["trajectory"], dtype=float),
-                            sample_count=64,
-                        )
-                        distance_tol = max(
-                            fp_tol * 20.0,
-                            0.35 * max(cluster["radius_mean"], radius_mean),
-                            0.2,
-                        )
-                        if mean_distance > distance_tol or max_distance > distance_tol * 2.5:
-                            continue
-
-                        score = mean_distance + 0.25 * center_delta + 0.25 * radius_delta
-                        if score < best_score:
-                            best_score = score
-                            best_cluster = cluster
-
-                    if best_cluster is not None:
-                        best_cluster["members"].append(int(point_index))
-                        labels[point_index] = best_cluster["id"]
-
-            if len(cycle_clusters) == 1:
-                fallback_cluster = cycle_clusters[0]
-                remaining_indices = np.flatnonzero(labels == -1)
-                for point_index in remaining_indices:
-                    traj = chronological_tail[:, :, point_index]
-                    finite_rows = np.all(np.isfinite(traj), axis=1)
-                    traj = traj[finite_rows]
-                    if traj.shape[0] != chronological_tail.shape[0] or traj.shape[0] < 16:
-                        continue
-
-                    if attractor_points.size:
-                        end_distance = np.min(np.linalg.norm(traj[-1][None, :] - attractor_points, axis=1))
-                        if end_distance < max(fp_tol * 4.0, 0.1):
-                            continue
-
-                    step_norms = np.linalg.norm(np.diff(traj, axis=0), axis=1)
-                    if step_norms.size == 0 or step_norms.mean() / max(dt, 1e-12) < vel_tol * 0.5:
-                        continue
-
-                    centroid = traj.mean(axis=0)
-                    radial = np.linalg.norm(traj - centroid, axis=1)
-                    radius_mean = float(radial.mean())
-                    if radius_mean < fp_tol:
-                        continue
-
-                    center_delta = np.linalg.norm(centroid - fallback_cluster["center"])
-                    radius_delta = abs(radius_mean - fallback_cluster["radius_mean"])
-                    if (
-                        center_delta > max(fp_tol * 40.0, 2.0)
-                        or radius_delta > max(fp_tol * 40.0, 2.0)
-                    ):
-                        continue
-
-                    fallback_cluster["members"].append(int(point_index))
-                    labels[point_index] = fallback_cluster["id"]
-
-        labels = labels.reshape(xx.shape)
-        unresolved_mask = labels == -1
-
-        return {
-            "labels": labels,
-            "attractors": attractors,
-            "fixed_points": fixed_points,
-            "unresolved_mask": unresolved_mask,
-            "method": "heuristic",
-        }
 
     def find_attractor_basins_manifold(self, phase_result, fill_boundary=True):
         region_ids = np.asarray(phase_result["region_ids"], dtype=int)
@@ -1348,6 +1642,7 @@ class LandscapePhaseAnalysisBase:
         cycle_window=128,
         manifold_linewidth=0,
         max_region_samples=5,
+        use_jax=False,
     ):
         xx = np.asarray(xx, dtype=float)
         yy = np.asarray(yy, dtype=float)
@@ -1358,7 +1653,7 @@ class LandscapePhaseAnalysisBase:
         y_range = (float(np.min(yy)), float(np.max(yy)))
 
         if fixed_points is None:
-            fixed_points = self.find_fixed_points(t, x_range, y_range)
+            fixed_points = self.find_fixed_points(t, x_range, y_range, use_jax=use_jax)
         if saddle_manifolds is None:
             saddle_manifolds = self._trace_saddle_manifold_geometry(
                 t,
@@ -1371,6 +1666,7 @@ class LandscapePhaseAnalysisBase:
                 1e-6,
                 1e-2,
                 1e-3,
+                use_jax=use_jax,
             )
 
         points = np.asarray(fixed_points["points"], dtype=float)
@@ -1421,6 +1717,7 @@ class LandscapePhaseAnalysisBase:
         else:
             region_attractor_ids = np.empty((0,), dtype=int)
 
+        sample_records = []
         for region_id in np.unique(region_ids):
             if region_id < 0:
                 continue
@@ -1436,30 +1733,55 @@ class LandscapePhaseAnalysisBase:
                 continue
 
             sample_indices = self._select_region_samples(region, max_samples=max_region_samples)
-            label_id = None
-            for iy, ix in sample_indices:
-                seed = np.array([xx[iy, ix], yy[iy, ix]], dtype=float)
-                attractor = self._classify_seed_attractor(
-                    t,
-                    seed,
-                    fixed_points,
-                    attractors,
-                    dt,
-                    n_steps,
-                    fp_tol,
-                    vel_tol,
-                    transient_fraction=transient_fraction,
-                    cycle_window=cycle_window,
-                    x_range=x_range,
-                    y_range=y_range,
-                )
-                if attractor is None:
-                    continue
-                label_id = int(attractor["label"])
-                break
+            for sample_rank, (iy, ix) in enumerate(sample_indices):
+                sample_records.append((int(region_id), int(sample_rank), int(iy), int(ix)))
 
-            if label_id is not None:
-                region_attractor_ids[int(region_id)] = label_id
+        if sample_records:
+            sample_seeds = np.array(
+                [[xx[iy, ix], yy[iy, ix]] for _, _, iy, ix in sample_records],
+                dtype=float,
+            ).T
+            sample_results = self._classify_seed_attractors_batched(
+                self._get_all_pars(t),
+                sample_seeds,
+                fixed_points,
+                dt,
+                n_steps,
+                fp_tol,
+                vel_tol,
+                transient_fraction=transient_fraction,
+                cycle_window=cycle_window,
+                x_range=x_range,
+                y_range=y_range,
+                use_jax=use_jax,
+            )
+            fixed_point_indices = np.asarray(sample_results["fixed_point_indices"], dtype=int)
+            chronological_tail = np.asarray(sample_results["chronological_tail"], dtype=float)
+
+            for sample_index, (region_id, _, _, _) in enumerate(sample_records):
+                if region_attractor_ids[int(region_id)] >= 0:
+                    continue
+
+                fixed_index = int(fixed_point_indices[sample_index])
+                if fixed_index >= 0:
+                    region_attractor_ids[int(region_id)] = int(fixed_label_map[fixed_index])
+                    continue
+
+                if not self._allows_limit_cycles() or chronological_tail.shape[0] < 16:
+                    continue
+
+                traj = chronological_tail[:, :, sample_index]
+                finite_rows = np.all(np.isfinite(traj), axis=1)
+                traj = traj[finite_rows]
+                if traj.shape[0] != chronological_tail.shape[0] or traj.shape[0] < 16:
+                    continue
+
+                signature = self._detect_cycle_signature(traj, dt, fp_tol, vel_tol)
+                if signature is None:
+                    continue
+
+                cluster = self._match_or_register_cycle_attractor(signature, attractors, fp_tol)
+                region_attractor_ids[int(region_id)] = int(cluster["id"])
 
         if hasattr(self, "_map_attractors_to_nodes"):
             attractor_node_ids = self._map_attractors_to_nodes(
@@ -1503,35 +1825,29 @@ class LandscapePhaseAnalysisBase:
         yy,
         fixed_points=None,
         method="manifold",
+        use_jax=False,
         **kwargs,
     ):
         method = str(method).lower()
-        if method == "heuristic":
-            return self.find_attractor_basins_heuristic(
+        if method != "manifold":
+            raise ValueError("method must be 'manifold'.")
+        phase_result = kwargs.pop("phase_result", None)
+        fill_boundary = kwargs.pop("fill_boundary", True)
+        if phase_result is None:
+            phase_result = self.find_phase_objects_manifold(
                 t,
                 xx,
                 yy,
                 fixed_points=fixed_points,
+                use_jax=use_jax,
                 **kwargs,
             )
-        if method == "manifold":
-            phase_result = kwargs.pop("phase_result", None)
-            fill_boundary = kwargs.pop("fill_boundary", True)
-            if phase_result is None:
-                phase_result = self.find_phase_objects_manifold(
-                    t,
-                    xx,
-                    yy,
-                    fixed_points=fixed_points,
-                    **kwargs,
-                )
-            elif kwargs:
-                unexpected = ", ".join(sorted(kwargs))
-                raise ValueError(
-                    f"Unexpected kwargs when phase_result is provided: {unexpected}"
-                )
-            return self.find_attractor_basins_manifold(phase_result, fill_boundary=fill_boundary)
-        raise ValueError("method must be 'manifold' or 'heuristic'.")
+        elif kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise ValueError(
+                f"Unexpected kwargs when phase_result is provided: {unexpected}"
+            )
+        return self.find_attractor_basins_manifold(phase_result, fill_boundary=fill_boundary)
 
     @staticmethod
     def get_catastrophe_info(phase_result):
@@ -1546,12 +1862,16 @@ class LandscapePhaseAnalysisBase:
         points = np.asarray(fixed_points["points"], dtype=float)
         object_info = []
         n_cycles = 0
+        exported_ids = {}
         for obj in objects:
             obj_type = str(obj["type"])
+            object_id = int(obj["id"])
+            export_id = int(obj.get("node_id", object_id)) if obj_type in {"attractor", "cycle"} else object_id
+            exported_ids[object_id] = export_id
             if obj_type == "cycle":
                 n_cycles += 1
                 cycle_info = {
-                    "id": int(obj["id"]),
+                    "id": export_id,
                     "type": obj_type,
                     "location": np.asarray(obj["center"], dtype=float).copy(),
                     "radius": float(obj["radius_mean"]),
@@ -1564,7 +1884,7 @@ class LandscapePhaseAnalysisBase:
 
             fixed_index = int(obj["fixed_point_index"])
             obj_info = {
-                "id": int(obj["id"]),
+                "id": export_id,
                 "type": obj_type,
                 "location": points[fixed_index].copy(),
             }
@@ -1576,11 +1896,14 @@ class LandscapePhaseAnalysisBase:
         for saddle in saddle_manifolds.get("saddles", ()):
             source_index = int(saddle["id"])
             for connection in saddle.get("unstable_connections", ()):
+                target_index = int(connection["target_index"])
+                if connection["target_type"] in {"attractor", "cycle"}:
+                    target_index = exported_ids.get(target_index, target_index)
                 unstable_connections.append(
                     {
                         "connection": (
                             source_index,
-                            int(connection["target_index"]),
+                            target_index,
                         ),
                         "target_type": connection["target_type"],
                     }

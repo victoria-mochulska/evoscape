@@ -2,33 +2,61 @@ import numpy as np
 import random
 from copy import deepcopy
 
+jnp = None
+
 from .. import mr_sigmoid
 from .landscape_phase_analysis import LandscapePhaseAnalysisBase
 from evoscape.modules.module_class import Node, UnstableNode, Center, NegCenter
 
-def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
+
+def _jax_numpy():
+    global jnp
+    if jnp is None:
+        try:
+            import jax
+            jax.config.update("jax_enable_x64", True)
+            import jax.numpy as jnp_import
+        except ImportError as exc:
+            raise ImportError("use_jax=True requires jax. Install with `poetry install -E jax`.") from exc
+        jnp = jnp_import
+    return jnp
+
+
+def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials, use_jax=False):
+    xp = _jax_numpy() if use_jax else np
+
+    q_flat = xp.asarray(q_flat, dtype=float)
+    xs = xp.asarray(xs, dtype=float)
+    ys = xp.asarray(ys, dtype=float)
+    sign = xp.asarray(sign, dtype=float)
+    curl = xp.asarray(curl, dtype=float)
+    sig = xp.asarray(sig, dtype=float)
+    a = xp.asarray(a, dtype=float)
+    Js = xp.asarray(Js, dtype=float)
+    x0 = xp.asarray(x0, dtype=float)
+
     x, y = q_flat
     xr = x[None, :] - xs
     yr = y[None, :] - ys
-    r = np.sqrt(xr ** 2 + yr ** 2)
+    r = xp.sqrt(xr ** 2 + yr ** 2)
 
     # w = np.zeros_like(r)
     # mask = ~((a == 0) & (sig == 0))
-    nonzero_sig = np.where(sig == 0, 1, sig)
-    w = a * np.exp(-0.5 * (r / nonzero_sig) ** 2)
+    nonzero_sig = xp.where(sig == 0, 1, sig)
+    w = a * xp.exp(-0.5 * (r / nonzero_sig) ** 2)
 
     dx = Js[:, :, 0, 0] * xr + Js[:, :, 0, 1] * yr
     dy = Js[:, :, 1, 0] * xr + Js[:, :, 1, 1] * yr
 
-    dX = A0 * (-(x - x0[0]) ** 3) + np.sum(w * dx, axis=0)
-    dY = A0 * (-(y - x0[1]) ** 3) + np.sum(w * dy, axis=0)
-    derivs = np.stack((dX, dY), axis=0)
+    dX = A0 * (-(x - x0[0]) ** 3) + xp.sum(w * dx, axis=0)
+    dY = A0 * (-(y - x0[1]) ** 3) + xp.sum(w * dy, axis=0)
+    derivs = xp.stack((dX, dY), axis=0)
 
     if return_potentials:
         coefs = sign * (1-curl) * sig ** 2
         coefs_rot = (sign * curl) * sig ** 2
-        pot = np.sum(w * coefs, axis=0) + A0 / 4 * ((x - x0[0]) ** 4 + (y - x0[1]) ** 4)
-        pot_rot = np.sum(w * coefs_rot, axis=0)
+        pot = xp.sum(w * coefs, axis=0) + A0 / 4 * ((x - x0[0]) ** 4 + (y - x0[1]) ** 4)
+        pot_rot = xp.sum(w * coefs_rot, axis=0)
         return derivs, pot, pot_rot
     return derivs
 
@@ -244,41 +272,76 @@ class Landscape(LandscapePhaseAnalysisBase):
         dy = J[1][0] * x + J[1][1] * y
         return dx, dy
 
-    def __call__(self, t, q, return_potentials=False):
-        """
-        Evaluate the flow at coordinates q and time t
-        :param t: float
-        :param q: array of shape (2, m, n); q[0] are x-coordinates, q[1] are y-coordinates
-        :param return_potentials: bool
-        :return: tuple of arrays with x and y derivatives, potentials (optional)
-        """
-        q = np.asarray(q)
-        grid_shape = q.shape[1:]
-        n_pts = q[1:].size
-
+    def _get_all_pars(self, t):
         if not self.module_list:
+            return {
+                "empty": True,
+                "A0": self.A0,
+                "x0": np.asarray(self.x0, dtype=float),
+            }
+
+        xs = np.array([m.x for m in self.module_list], dtype=float)[:, None]
+        ys = np.array([m.y for m in self.module_list], dtype=float)[:, None]
+        sign = np.array(
+            [-1 if isinstance(m, (Node, NegCenter)) else +1 for m in self.module_list],
+            dtype=float,
+        )[:, None]
+        curl = np.array(
+            [1 if isinstance(m, (Center, NegCenter)) else 0 for m in self.module_list],
+            dtype=float,
+        )[:, None]
+        Js = np.stack([m.J for m in self.module_list], axis=0).astype(float)[:, None, :, :]
+
+        module_pars = [m.get_current_pars(t, self.regime, *self.morphogen_times)[1:] for m in self.module_list]
+        sig_list, a_list = zip(*module_pars)
+        sig = np.asarray(sig_list, dtype=float).reshape(-1, 1)
+        a = np.asarray(a_list, dtype=float).reshape(-1, 1)
+
+        return {
+            "empty": False,
+            "xs": xs,
+            "ys": ys,
+            "sign": sign,
+            "curl": curl,
+            "Js": Js,
+            "sig": sig,
+            "a": a,
+            "A0": self.A0,
+            "x0": np.asarray(self.x0, dtype=float),
+        }
+
+    def _eval_flow(self, pars, q, return_potentials=False, use_jax=False):
+        xp = _jax_numpy() if use_jax else np
+
+        q = xp.asarray(q, dtype=float)
+        if q.ndim < 2 or q.shape[0] != 2:
+            raise ValueError("q must have shape (2, ...)")
+
+        grid_shape = q.shape[1:]
+        if pars["empty"]:
             x, y = q
-            zeros = np.zeros(grid_shape)
-            derivs = np.stack([zeros, zeros], axis=0)
-            pot = self.A0 / 4 * ((x - self.x0[0]) ** 4 + (y - self.x0[1]) ** 4)
+            zeros = xp.zeros(grid_shape, dtype=float)
+            derivs = xp.stack([zeros, zeros], axis=0)
+            pot = pars["A0"] / 4 * ((x - pars["x0"][0]) ** 4 + (y - pars["x0"][1]) ** 4)
             if return_potentials:
                 return derivs, pot, zeros
             return derivs
 
         q_flat = q.reshape(2, -1)
-        xs = np.array([m.x for m in self.module_list])[:, None]
-        ys = np.array([m.y for m in self.module_list])[:, None]
-        sign = np.array([-1 if isinstance(m, (Node, NegCenter)) else +1 for m in self.module_list])[:, None]
-        curl = np.array([1 if isinstance(m, (Center, NegCenter)) else 0 for m in self.module_list])[:, None]
-
-        Js = np.stack([m.J for m in self.module_list], axis=0)[:, None, :, :]
-
-        pars = [m.get_current_pars(t, self.regime, *self.morphogen_times)[1:] for m in self.module_list]
-        sig_list, a_list = zip(*pars)
-        sig = np.stack([np.broadcast_to(np.asarray(s), (n_pts,)) for s in sig_list], axis=0)
-        a = np.stack([np.broadcast_to(np.asarray(amp), (n_pts,)) for amp in a_list], axis=0)
-
-        res = _flow(q_flat, xs, ys, sign, curl, sig, a, Js, self.A0, self.x0, return_potentials)
+        res = _flow(
+            q_flat,
+            pars["xs"],
+            pars["ys"],
+            pars["sign"],
+            pars["curl"],
+            pars["sig"],
+            pars["a"],
+            pars["Js"],
+            pars["A0"],
+            pars["x0"],
+            return_potentials,
+            use_jax=use_jax,
+        )
 
         if return_potentials:
             derivs, pot, pot_rot = res
@@ -286,8 +349,66 @@ class Landscape(LandscapePhaseAnalysisBase):
             pot = pot.reshape(grid_shape)
             pot_rot = pot_rot.reshape(grid_shape)
             return derivs, pot, pot_rot
-        derivs = res.reshape((2,) + grid_shape)
-        return derivs
+        return res.reshape((2,) + grid_shape)
+
+    def __call__(self, t, q, return_potentials=False, use_jax=False):
+        """
+        Evaluate the flow at coordinates q and time t
+        :param t: float
+        :param q: array of shape (2, m, n); q[0] are x-coordinates, q[1] are y-coordinates
+        :param return_potentials: bool
+        :param use_jax: bool
+        :return: tuple of arrays with x and y derivatives, potentials (optional)
+        """
+        xp = _jax_numpy() if use_jax else np
+        q = xp.asarray(q, dtype=float)
+        grid_shape = q.shape[1:]
+        n_pts = q[1:].size
+
+        if not self.module_list:
+            x, y = q
+            zeros = xp.zeros(grid_shape, dtype=float)
+            derivs = xp.stack([zeros, zeros], axis=0)
+            pot = self.A0 / 4 * ((x - self.x0[0]) ** 4 + (y - self.x0[1]) ** 4)
+            if return_potentials:
+                return derivs, pot, zeros
+            return derivs
+
+        q_flat = q.reshape(2, -1)
+        xs = np.array([m.x for m in self.module_list], dtype=float)[:, None]
+        ys = np.array([m.y for m in self.module_list], dtype=float)[:, None]
+        sign = np.array([-1 if isinstance(m, (Node, NegCenter)) else +1 for m in self.module_list], dtype=float)[:, None]
+        curl = np.array([1 if isinstance(m, (Center, NegCenter)) else 0 for m in self.module_list], dtype=float)[:, None]
+
+        Js = np.stack([m.J for m in self.module_list], axis=0).astype(float)[:, None, :, :]
+
+        pars = [m.get_current_pars(t, self.regime, *self.morphogen_times)[1:] for m in self.module_list]
+        sig_list, a_list = zip(*pars)
+        sig = np.stack([np.broadcast_to(np.asarray(s, dtype=float), (n_pts,)) for s in sig_list], axis=0)
+        a = np.stack([np.broadcast_to(np.asarray(amp, dtype=float), (n_pts,)) for amp in a_list], axis=0)
+
+        res = _flow(
+            q_flat,
+            xs,
+            ys,
+            sign,
+            curl,
+            sig,
+            a,
+            Js,
+            self.A0,
+            self.x0,
+            return_potentials,
+            use_jax=use_jax,
+        )
+
+        if return_potentials:
+            derivs, pot, pot_rot = res
+            derivs = derivs.reshape((2,) + grid_shape)
+            pot = pot.reshape(grid_shape)
+            pot_rot = pot_rot.reshape(grid_shape)
+            return derivs, pot, pot_rot
+        return res.reshape((2,) + grid_shape)
 
     # def __call__(self, t, q, return_potentials=False):
     #     """

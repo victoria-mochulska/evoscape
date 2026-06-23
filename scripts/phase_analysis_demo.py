@@ -15,6 +15,8 @@ from evoscape.landscapes import Landscape
 from evoscape.modules import Center, Node, UnstableNode
 from evoscape.morphogen_regimes import mr_const
 
+USE_JAX = False
+
 
 def build_grid(limit, n_points):
     q = np.linspace(-limit, limit, n_points)
@@ -49,7 +51,7 @@ def print_summary(title, fixed_points, phase_result, basin_grid, saddle_manifold
             )
 
 
-def fixed_point_example():
+def fixed_point_example(use_jax=False):
     modules = [
         Node(x=-1.5, y=0.0, a=1.5, s=1.0),
         Node(x=1.5, y=0.0, a=2.0, s=0.8),
@@ -59,7 +61,13 @@ def fixed_point_example():
     ]
     landscape = Landscape(modules, A0=0.05, regime=mr_const, n_regimes=1)
     xx, yy = build_grid(3.0, 101)
-    fixed_points = landscape.find_fixed_points(0.0, (-3.0, 3.0), (-3.0, 3.0), n_grid=23)
+    fixed_points = landscape.find_fixed_points(
+        0.0,
+        (-3.0, 3.0),
+        (-3.0, 3.0),
+        n_grid=23,
+        use_jax=use_jax,
+    )
     phase_result = landscape.find_phase_objects_manifold(
         0.0,
         xx,
@@ -68,6 +76,7 @@ def fixed_point_example():
         dt=0.06,
         n_steps=600,
         cycle_window=96,
+        use_jax=use_jax,
     )
     basin_grid = landscape.find_attractor_basins_manifold(phase_result=phase_result)
     saddle_manifolds = phase_result["saddle_manifolds"]
@@ -114,7 +123,7 @@ def fixed_point_example():
     return fig
 
 
-def cycle_example():
+def cycle_example(use_jax=False):
     modules = [
         Node(0.0, 0.0, (2.,), (1.8,), tau=1.0),
         UnstableNode(0.0, 0.0, (3.,), (1.2,), tau=1.0),
@@ -125,7 +134,13 @@ def cycle_example():
     xx, yy = build_grid(3.0, 151)
     t = 0.0
 
-    fixed_points = landscape.find_fixed_points(t, (-3.0, 3.0), (-3.0, 3.0), n_grid=25)
+    fixed_points = landscape.find_fixed_points(
+        t,
+        (-3.0, 3.0),
+        (-3.0, 3.0),
+        n_grid=25,
+        use_jax=use_jax,
+    )
     saddle_manifolds = landscape.find_saddle_manifolds(
         t,
         fixed_points=fixed_points,
@@ -135,6 +150,7 @@ def cycle_example():
         n_steps=800,
         termination_tol=2e-2,
         velocity_tol=2e-3,
+        use_jax=use_jax,
     )
     phase_result = landscape.find_phase_objects_manifold(
         t,
@@ -147,6 +163,7 @@ def cycle_example():
         fp_tol=2e-2,
         vel_tol=2e-3,
         cycle_window=256,
+        use_jax=use_jax,
     )
     basin_grid = landscape.find_attractor_basins_manifold(phase_result=phase_result)
 
@@ -197,9 +214,10 @@ def main():
     vis.update_params()
     plt.style.use("default")
     plt.rcParams.update({"figure.dpi": 120})
+    print(f"use_jax={USE_JAX}")
 
-    fixed_point_example()
-    cycle_example()
+    fixed_point_example(use_jax=USE_JAX)
+    cycle_example(use_jax=USE_JAX)
 
     plt.show()
 
