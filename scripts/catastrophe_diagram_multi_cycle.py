@@ -29,7 +29,11 @@ from evoscape.morphogen_regimes import mr_const
 plt.style.use("default")
 plt.rcParams.update({"figure.dpi": 200})
 
+save_dir = ROOT / "figures" / "catastrophe_diagram_multi_flip_sig"
+
 N_PROCESSES = 8
+
+n_grid_points = 21
 
 s_range = (0.1, 0.5)
 sig = np.sqrt(s_range[0] * s_range[1])
@@ -52,24 +56,48 @@ sig = np.sqrt(s_range[0] * s_range[1])
 #     return Landscape(modules, A0=0.05, regime=mr_const, n_regimes=1)
 
 
+# def update_landscape(p1, p2):
+#     amp = 4.
+#     a_head = amp*np.exp(-p2/2)
+#     a_fate = 1.5*amp*np.exp(p2/2)
+#     a_left = a_fate*np.exp(-p1/2)
+#     a_right = a_fate*np.exp(p1/2)
+#
+#     # print(a_head, a_left, a_right)
+#
+#     s_fate = 0.75 #0.75
+#     x_fate = 1.5 #1.1
+#     # y of cycle was 0.8
+#     modules = [
+#         Node(x=-0.0, y=0.5, a=4., s=0.8),
+#
+#         Node(x=-x_fate, y=-1., a=a_left, s=s_fate+0.01),
+#         Node(x=+x_fate, y=-1., a=a_right, s=s_fate),
+#
+#         UnstableNode(x=0.0, y=0.5, a=a_head*4, s=0.4),
+#         Center(x=0, y=0.5, a=4., s=0.7),
+#     ]
+#     return Landscape(modules, A0=0.05, x0=(0., -0.8), regime=mr_const, n_regimes=1)
+
+
 def update_landscape(p1, p2):
-    amp = 4.
-    a_head = amp*np.exp(-p2/2)
-    a_fate = amp*np.exp(p2/2)
-    a_left = a_fate*np.exp(-p1/2)
-    a_right = a_fate*np.exp(p1/2)
+    sig=0.5
+    s_head = sig * np.exp(+p2 / 2)
+    s_fate = sig * np.exp(-p2 / 2)
+    s_left = s_fate * np.exp(-p1 / 2)
+    s_right = s_fate * np.exp(p1 / 2)
 
-    # print(a_head, a_left, a_right)
-
-    s_fate = 0.65 #0.75
+    x_fate = 1.0 #1.1, 1.5
+    y_cycle = 0.5 # 0.5
     modules = [
-        Node(x=-0.0, y=0.8, a=4., s=0.8),
+        Node(x=-0.0, y=y_cycle, a=4., s=s_head),
 
-        Node(x=-1.1, y=-1., a=a_left, s=s_fate+0.01),
-        Node(x=+1.1, y=-1., a=a_right, s=s_fate),
+        Node(x=-x_fate, y=-1., a=4.5, s=s_left+0.01),
+        # a was 3
+        Node(x=+x_fate, y=-1., a=4.5, s=s_right),
 
-        UnstableNode(x=0.0, y=0.8, a=a_head*2, s=0.4),
-        Center(x=0, y=.8, a=3., s=0.7),
+        # UnstableNode(x=0.0, y=y_cycle, a=6., s=s_head*0.8),
+        # Center(x=0, y=y_cycle, a=4., s=s_head*0.85),
     ]
     return Landscape(modules, A0=0.05, x0=(0., -0.8), regime=mr_const, n_regimes=1)
 
@@ -89,7 +117,7 @@ def unstable_connection_signature(catastrophe_info):
 
 def signature_label(signature):
     if not signature:
-        return "no unstable connections"
+        return "no unstable manifolds"
     return "; ".join(f"{src}->{dst} ({target_type})" for src, dst, target_type in signature)
 
 
@@ -202,11 +230,9 @@ def render_skeleton_thumb(p1_value, p2_value, xx, yy):
 
 def main():
     start_time = time.perf_counter()
-    save_dir = ROOT / "figures" / "catastrophe_diagram_multi_cycle_amp_21"
     save_dir.mkdir(parents=True, exist_ok=True)
     print(f"n_processes={N_PROCESSES}")
 
-    n_grid_points = 11
     p1 = np.linspace(-1, 1, n_grid_points)
     p2 = np.linspace(-1, 1, n_grid_points)
     # q = np.linspace(-1.5, 1.5, 101)
@@ -232,7 +258,7 @@ def main():
             catastrophe_info_grid[row_index, col_index] = catastrophe_info
             n_fp_grid[row_index, col_index] = n_fp
             n_c_grid[row_index, col_index] = int(catastrophe_info["n_cycles"])
-            if point_index % 11 == 0 or point_index == total_points:
+            if point_index % n_grid_points == 0 or point_index == total_points:
                 print(f"  completed {point_index}/{total_points} sweep points")
 
     print("Unique fixed-point counts:", np.unique(n_fp_grid).tolist())
@@ -357,6 +383,7 @@ def main():
             yy,
             regime=0,
             color_scheme="fp_types",
+            draw_circles=True,
         )
         sample_landscape_fig.axes[0].set_title(
             f"Landscape\nn_fp={n_fp}, n_c={n_c}\n{signature_label(signature)}\np1={sample_p1:.2f}, p2={sample_p2:.2f}"
