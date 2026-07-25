@@ -10,7 +10,7 @@ from jax import jit, vmap
 from evoscape.landscape_visuals import visualize_landscape
 from evoscape.jax.converters import pytree_to_landscape
 from copy import copy
-
+from evoscape.landscape_visuals import visualize_landscape_t, mr_current_regime, cmap_state, norm_state
 # Initialization function used in the fitness function, we let the model choose where the cells should start in optimization
 def init_cell(key,n,init_cond,noise):                    
     key,subkey = jrd.split(key)
@@ -134,6 +134,39 @@ def make_movie_landscape(dynamics, static, xx, yy, n_frames,path, n_regime_chose
         frames.append(imageio.imread(buf))
     imageio.mimsave(path, frames, duration=10.)
 
+
+def make_movie_discrete_with_traj(traj, states, landscape, xx, yy, labels, time_pars, n_cells, noise, init_cond=0,
+                        circles=True, circle_opacity=0.1, density=0.65, nullclines=False,
+                        fps=10, save_dir='', filename='movie.gif'):
+    """
+    Generate a trajectory movie with background streamplots that change between regimes
+    """
+    n_frames = time_pars[2]
+    streamplots = [] # generate streamplots only once per condition
+    for i in range(len(labels)):
+        t_stream = landscape.morphogen_times[i-1] if i > 0 else time_pars[0]
+        fig, ax = visualize_landscape_t(landscape, xx, yy, t_stream, color_scheme='order', circles=circles,
+                                            nullclines=nullclines, circle_opacity=circle_opacity, density=density)
+        ax.text(0.02, 0.95, labels[i], transform=ax.transAxes, fontsize=15, fontweight='bold')
+        streamplots.append((fig, ax))
+
+    landscape.init_cells(n_cells, init_cond, noise)
+    times = np.linspace(*time_pars)
+    for i in range(n_frames):
+        regime = mr_current_regime(times[i], *landscape.morphogen_times)
+        fig, ax = streamplots[regime]
+        sc = ax.scatter(traj[0, :, i], traj[1, :, i], s=25, alpha=1., c=states[:, i], cmap=cmap_state, norm=norm_state, zorder=10)
+        fig.savefig(save_dir+f"frame_{i:03d}.png", dpi=150, bbox_inches='tight')
+        sc.remove()
+
+    for fig, ax in streamplots:
+        plt.close(fig)
+
+    frames = [imageio.imread(save_dir+f"frame_{i:03d}.png") for i in range(n_frames)]
+    imageio.mimsave(save_dir+filename, frames, fps=fps)
+    del frames
+    print(f"Movie saved to {save_dir+filename}")
+
 @jit
 def rescale(A, N, T):
     return vmap(lambda x: jimg.resize(x, (N, T), method="linear"))(A)
@@ -143,12 +176,12 @@ def get_drosophile_data(pathfile):
     #Hardcoded 
     data = np.zeros((4,930,291))
     for _, row in df.iterrows():
-        t = row["time"]
-        x = row["x"]
-        data[0][x][t] = row["Gt_data"]
-        data[1][x][t] = row["Kni_data"]
-        data[2][x][t] = row["Hb_data"]
-        data[3][x][t] = row["Kr_data"]
+        t = int(row["time"])
+        x = int(row["x"])
+        data[0, x, t] = row["Gt_data"]
+        data[1, x, t] = row["Kni_data"]
+        data[2, x, t] = row["Hb_data"]
+        data[3, x, t] = row["Kr_data"]
     
     return jnp.array(data)
 
