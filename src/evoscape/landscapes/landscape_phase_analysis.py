@@ -473,11 +473,16 @@ class LandscapePhaseAnalysisBase:
         candidate_lags = np.arange(8, max_lag + 1)
         recurrence = np.linalg.norm(traj[-1] - traj[-1 - candidate_lags], axis=1)
         best_idx = int(np.argmin(recurrence))
-        best_lag = int(candidate_lags[best_idx])
         best_distance = float(recurrence[best_idx])
         recurrence_tol = max(fp_tol * 2.5, step_norms.mean() * 2.0, 1e-3)
         if best_distance > recurrence_tol:
             return None
+        local_minima = np.ones_like(recurrence, dtype=bool)
+        local_minima[1:] &= recurrence[1:] <= recurrence[:-1]
+        local_minima[:-1] &= recurrence[:-1] <= recurrence[1:]
+        best_idx = int(np.flatnonzero((recurrence <= recurrence_tol) & local_minima)[0])
+        best_lag = int(candidate_lags[best_idx])
+        best_distance = float(recurrence[best_idx])
 
         segment_len = min(max(6, best_lag // 2), 16)
         current_segment = traj[-segment_len:]

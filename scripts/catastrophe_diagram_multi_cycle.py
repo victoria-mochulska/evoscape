@@ -80,6 +80,28 @@ sig = np.sqrt(s_range[0] * s_range[1])
 #     return Landscape(modules, A0=0.05, x0=(0., -0.8), regime=mr_const, n_regimes=1)
 
 
+# def update_landscape(p1, p2):
+#     sig=0.5
+#     s_head = sig * np.exp(+p2 / 2)
+#     s_fate = sig * np.exp(-p2 / 2)
+#     s_left = s_fate * np.exp(-p1 / 2)
+#     s_right = s_fate * np.exp(p1 / 2)
+#
+#     x_fate = 1.0 #1.1, 1.5
+#     y_cycle = 0.5 # 0.5
+#     modules = [
+#         Node(x=-0.0, y=y_cycle, a=4., s=s_head),
+#
+#         Node(x=-x_fate, y=-1., a=4.5, s=s_left+0.01),
+#         # a was 3
+#         Node(x=+x_fate, y=-1., a=4.5, s=s_right),
+#
+#         # UnstableNode(x=0.0, y=y_cycle, a=6., s=s_head*0.8),
+#         # Center(x=0, y=y_cycle, a=4., s=s_head*0.85),
+#     ]
+#     return Landscape(modules, A0=0.05, x0=(0., -0.8), regime=mr_const, n_regimes=1)
+
+
 def update_landscape(p1, p2):
     sig=0.5
     s_head = sig * np.exp(+p2 / 2)
@@ -87,19 +109,15 @@ def update_landscape(p1, p2):
     s_left = s_fate * np.exp(-p1 / 2)
     s_right = s_fate * np.exp(p1 / 2)
 
-    x_fate = 1.0 #1.1, 1.5
-    y_cycle = 0.5 # 0.5
+    x_fate = 1.8 #1.8
     modules = [
-        Node(x=-0.0, y=y_cycle, a=4., s=s_head),
-
-        Node(x=-x_fate, y=-1., a=4.5, s=s_left+0.01),
-        # a was 3
-        Node(x=+x_fate, y=-1., a=4.5, s=s_right),
-
-        # UnstableNode(x=0.0, y=y_cycle, a=6., s=s_head*0.8),
-        # Center(x=0, y=y_cycle, a=4., s=s_head*0.85),
+        Node(x=-0.0, y=0., a=4., s=s_head),
+        Node(x=-x_fate, y=0., a=4.51, s=s_left),
+        Node(x=+x_fate, y=0., a=4.5, s=s_right),
+        # UnstableNode(x=0.0, y=0, a=6., s=s_head*0.8),
+        # Center(x=0, y=0., a=4., s=s_head*0.85),
     ]
-    return Landscape(modules, A0=0.05, x0=(0., -0.8), regime=mr_const, n_regimes=1)
+    return Landscape(modules, A0=0.05, x0=(0., 0.), regime=mr_const, n_regimes=1)
 
 
 def unstable_connection_signature(catastrophe_info):
@@ -172,7 +190,7 @@ order_colors = [
 
 def compute_pixel(args):
     row_index, col_index, p1_value, p2_value, q = args
-    xx, yy = np.meshgrid(q + 0.5, q + 0.5, indexing="xy")
+    xx, yy = np.meshgrid(q, q, indexing="xy")
     landscape = update_landscape(p1_value, p2_value)
     phase_result = landscape.find_phase_objects_manifold(
         0.0,
