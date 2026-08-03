@@ -82,6 +82,22 @@ class AutoEncoder(nnx.Module):
 
         return traj_decoded
 
+    def encode_traj(self, traj):
+        vencoder = nnx.vmap(
+                nnx.vmap(
+                    lambda x : self.encoder(x),
+                    in_axes=1,
+                    out_axes=1
+                ),
+                in_axes=2,
+                out_axes=2
+        )
+
+        traj_encoded = vencoder(traj) # (2, n, nt)
+        return traj_encoded
+
+
+
     # def _decode_traj_landscape(self, traj):
     #     # Our mlp wants (n, 2), and we have (2, n, nt) so we need to convert the trajectory, decode it, then reconvert it
     #     # Maybe this could be done much more efficiently with vmap ? But this works for now
