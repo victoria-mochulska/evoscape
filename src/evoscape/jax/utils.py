@@ -143,8 +143,8 @@ def get_drosophile_data(pathfile):
     #Hardcoded 
     data = np.zeros((4,930,291))
     for _, row in df.iterrows():
-        t = row["time"]
-        x = row["x"]
+        t = int(row["time"])
+        x = int(row["x"])
         data[0][x][t] = row["Gt_data"]
         data[1][x][t] = row["Kni_data"]
         data[2][x][t] = row["Hb_data"]
