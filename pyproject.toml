@@ -20,6 +20,7 @@ flax = "^0.12.7"
 ott-jax = "^0.6.0"
 scikit-learn = "^1.9.0"
 python-pptx = "^1.0.2"
+tqdm = "^4.70.0"
 
 [tool.poetry.group.jax]
 optional = true
