@@ -8,6 +8,54 @@ from matplotlib.patches import Ellipse
 from pathlib import Path
 from matplotlib.collections import LineCollection
 
+
+
+
+def show_init_latent(data_points, title="Initial points in latent space", order=False, filename=None, dpi=350):
+    """ Show the initial points of the data or simulation in the latent space
+
+    Parameters
+    ----------
+    data_points : Points in the latent space follow convention (2, cells, time)
+    title : title of the figure
+    order : False if unordered, True if ordered (like the drosophila)
+    filnename : name and where to save it
+    """
+    X_pts = data_points[0, :, 0]
+    Y_pts = data_points[1, :, 0]
+
+    # Axis limits
+    minimum_x = np.min(X_pts)
+    maximum_x = np.max(X_pts)
+    minimum_y = np.min(Y_pts)
+    maximum_y = np.max(Y_pts)
+
+
+
+
+    fig, ax = plt.subplots(dpi=dpi)
+    if order:
+        space = np.arange(len(X_pts))
+        sc = ax.scatter(X_pts, Y_pts, c=space, cmap="rainbow")
+        cbar = plt.colorbar(sc, ax=ax)
+        N = len(X_pts) - 1
+        cbar.set_ticks([0, N])
+        cbar.set_ticklabels(["Start", "Finish"])
+        cbar.set_label("Space")
+    else:
+        sc = ax.scatter(X_pts, Y_pts, c="black")
+
+    plt.title(title)
+    plt.xlim(minimum_x, maximum_x)
+    plt.ylim(minimum_y, maximum_y)
+    plt.axis('equal')
+    if filename != None:
+        plt.savefig(filename)
+    return fig
+
+
+
+
 def show_potentials(X, Y, phi, psy, title1, title2):
     """Show two windows of potentials. The potentials usually are the gradient and rotational potential.
 
