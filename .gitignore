@@ -27,3 +27,5 @@ src/evoscape/landscapes/other/
 .vscode
 .venv
 /results
+/nath_scripts
+/jobs
