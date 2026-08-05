@@ -10,8 +10,8 @@ CPU = False
 import jax
 import jax.numpy as jnp
 
-from src.utilities import *
-from trajectory_loss_functions import *
+from evoscape.jax.nath_utils.utilities import *
+from evoscape.jax.nath_utils.trajectory_loss_functions import *
 
 import time
 

@@ -3,12 +3,12 @@ import jax.numpy as jnp
 from .helmholtz_decomp import *
 from .module_gaussian import *
 from .visualizations import *
-from src.trajectory_loss_functions import compare_trajectories_all_points
-from src.trajectory_loss_functions import compare_mini_traj
-from src.trajectory_loss_functions import give_mini_traj
-from src.trajectory_loss_functions import compare_end_part
-from src.trajectory_loss_functions import compare_end_part_time
-from src.trajectory_loss_functions import choose_point
+from evoscape.jax.nath_utils.trajectory_loss_functions import compare_trajectories_all_points
+from evoscape.jax.nath_utils.trajectory_loss_functions import compare_mini_traj
+from evoscape.jax.nath_utils.trajectory_loss_functions import give_mini_traj
+from evoscape.jax.nath_utils.trajectory_loss_functions import compare_end_part
+from evoscape.jax.nath_utils.trajectory_loss_functions import compare_end_part_time
+from evoscape.jax.nath_utils.trajectory_loss_functions import choose_point
 from functools import partial
 
 

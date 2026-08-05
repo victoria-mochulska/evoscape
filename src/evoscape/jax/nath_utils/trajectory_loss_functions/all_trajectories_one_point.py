@@ -1,7 +1,7 @@
 
 import jax
 import jax.numpy as jnp
-from src.utilities import *
+from evoscape.jax.nath_utils.utilities import *
 from functools import partial
 import jax.lax as lax
 
