@@ -1,12 +1,16 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+
 from evoscape.jax.flax_models.landscape_flax import LandscapeFlax
 from evoscape.jax.flax_models.autoencoder_flax import AutoEncoder
+
 
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import optax
 from flax import nnx
-
+import sys
 from evoscape.landscapes import Landscape
 from evoscape.modules import Node, UnstableNode, Center, NegCenter
 from evoscape.morphogen_regimes import mr_const, mr_sigmoid
@@ -58,10 +62,10 @@ xx, yy = np.meshgrid(q, q, indexing='xy')
 
 ## fig = visualize_landscape_t(landscape, xx, yy, 2., color_scheme='fp_types', traj_times=(0., 20., 201), traj_init_cond=(2.,2.), traj_start=100)
 fig = visualize_landscape(landscape, xx, yy, regime=0, color_scheme='fp_types')
-plt.savefig(RESULT_DIR + "/streamplot_landscape.png")
+plt.savefig(RESULT_DIR / "streamplot_landscape.png")
 plt.close(fig)
 fig = visualize_potential(landscape, xx, yy, regime=0, color_scheme="fp_types")
-plt.savefig(RESULT_DIR + "/potential_landscape.png")
+plt.savefig(RESULT_DIR / "potential_landscape.png")
 plt.close(fig)
 
 
@@ -105,7 +109,8 @@ print(target_traj.shape)
 
 
 
-
+encoded_traj = autoencoder.encode_traj(target_traj)
+encoded_traj_init = encoded_traj[:, :, 0]
 q_init = target_traj[:, :,0]
 print(q_init.shape)
 
@@ -124,8 +129,10 @@ q_init_latent = nnx.vmap(lambda x : autoencoder.encoder(x), in_axes=1, out_axes=
 print(q_init_latent.shape)
 plt.scatter(q_init_latent[0,:], q_init_latent[1,:])
 
+print(RMS_points(encoded_traj_init, q_init_latent))
 
-
+show_init_latent(encoded_traj, order=False, filename=RESULT_DIR / "init_pts_latent.png")
+sys.exit("Stopping the script here.") 
 
 
 
