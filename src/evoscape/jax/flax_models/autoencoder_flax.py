@@ -97,6 +97,16 @@ class AutoEncoder(nnx.Module):
         return traj_encoded
 
 
+    def get_latent_trajectories(self, q_init):
+        # encoding the initial condition
+        #q_init_encoded = nnx.vmap(lambda x : self.encoder(x), in_axes=1, out_axes=1)(q_init) # (2, n)
+        q_init_encoded = self.encode_traj(q_init)
+
+        # computing the trajectories with the landscapes
+        traj, states = self.landscape_flax(q_init_encoded) # (2, n, nt)
+        return traj
+
+
 
     # def _decode_traj_landscape(self, traj):
     #     # Our mlp wants (n, 2), and we have (2, n, nt) so we need to convert the trajectory, decode it, then reconvert it
