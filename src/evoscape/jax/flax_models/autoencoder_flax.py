@@ -97,7 +97,7 @@ class AutoEncoder(nnx.Module):
         return traj_encoded
 
 
-    def get_latent_trajectories(self, q_init):
+    def get_latent_trajectory(self, q_init):
         # encoding the initial condition
         #q_init_encoded = nnx.vmap(lambda x : self.encoder(x), in_axes=1, out_axes=1)(q_init) # (2, n)
         q_init_encoded = self.encode_traj(q_init)
