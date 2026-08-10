@@ -99,8 +99,7 @@ class AutoEncoder(nnx.Module):
 
     def get_latent_trajectory(self, q_init):
         # encoding the initial condition
-        #q_init_encoded = nnx.vmap(lambda x : self.encoder(x), in_axes=1, out_axes=1)(q_init) # (2, n)
-        q_init_encoded = self.encode_traj(q_init)
+        q_init_encoded = nnx.vmap(lambda x : self.encoder(x), in_axes=1, out_axes=1)(q_init) # (2, n)
 
         # computing the trajectories with the landscapes
         traj, states = self.landscape_flax(q_init_encoded) # (2, n, nt)
