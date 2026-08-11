@@ -1014,7 +1014,9 @@ def show_trajectory2(trajectory1, trajectory2, filename):
 def show_trajectory(
     trajectory1,
     trajectory2,
-    title,
+    suptitle,
+    subtitle_left,
+    subtitle_right,
     filename,
     fps=50,
     dpi=100,
@@ -1119,13 +1121,18 @@ def show_trajectory(
         figsize=(12, 6),
         constrained_layout=True,
     )
-    fig.suptitle(title, fontsize=16)
+    fig.suptitle(suptitle, fontsize=16)
 
 
     for ax in (ax1, ax2):
         ax.set_xlim(minimum_x - margin_x, maximum_x + margin_x)
         ax.set_ylim(minimum_y - margin_y, maximum_y + margin_y)
         ax.set_aspect("equal", adjustable="box")
+
+    # title left
+    ax1.set_title(subtitle_left)
+    # title right 
+    ax2.set_title(subtitle_right)
 
     # ------------------------------------------------------------------
     # Quatre objets graphiques seulement
