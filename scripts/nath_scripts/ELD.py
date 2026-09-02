@@ -112,7 +112,7 @@ landscape_flax = LandscapeFlax(landscape, rngs)
 
 init_noise = 0.
 t0 = 0.
-tf = 20.
+tf = 45.
 nt = data.shape[2]
 ndt = 50
 noise = 0.
@@ -232,7 +232,7 @@ def lax_step(carry, _):
     return output, output
 
 # Training loop 
-n_epochs = 1000
+n_epochs = 2000
 verbose = 50
 loss_vals = []
 
@@ -296,7 +296,7 @@ print("traj from model in latent space", trained_traj_latent.shape)
 print("RMS of trained traj", RMS_points(data, trained_real_traj))
 
 
-#sys.exit("Stopping the script here.") 
+sys.exit("Stopping the script here.") 
 
 
 
