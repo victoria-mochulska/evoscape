@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3, 4"
 
 from evoscape.jax.flax_models.landscape_flax import LandscapeFlax
 from evoscape.jax.flax_models.autoencoder_flax import AutoEncoder
@@ -47,7 +47,7 @@ modules = [Node(x=x, y=y, a=np.array([0.2]), s=np.array([1.0]), tau=1.) for x,y 
 
 landscape = Landscape(
     module_list=modules,
-    A0=0.05,
+    A0=0.00,
     init_cond=(0.0, 0.0),
     regime=mr_const,
     n_regimes=1,
@@ -93,7 +93,7 @@ print("data shape", data.shape)
 
 ######## INDEXING FOR TIME AND SPACE ######
 percentage_time = 100
-percentage_space = 100
+percentage_space = 5
 limit_time = int(data.shape[2]*0.56)
 limit_space = int(data.shape[1]*0.40)
 data = data[:, limit_space:, :limit_time]
@@ -101,6 +101,8 @@ skip_time = int(100/percentage_time)
 skip_space = int(100/percentage_space)
 data = data[:,::skip_space,::skip_time]
 print("data shape", data.shape)
+
+ns = data.shape[1]
 
 
 
@@ -112,9 +114,9 @@ landscape_flax = LandscapeFlax(landscape, rngs)
 
 init_noise = 0.
 t0 = 0.
-tf = 45.
+tf = 20.
 nt = data.shape[2]
-ndt = 50
+ndt = 50 #int(50*data.shape[2]/20)
 noise = 0.
 
 landscape_flax.set_simulation(init_noise=init_noise, t0=t0, tf=tf, nt=nt, ndt=ndt, noise=noise)
@@ -126,7 +128,6 @@ dims_encoder = [4, 8, 4, 2]
 dims_decoder = [2, 8, 8, 4]
 
 autoencoder = AutoEncoder(landscape_flax, dims_decoder=dims_decoder, dims_encoder=dims_encoder, rngs=rngs)
-
 
 
 
@@ -170,7 +171,11 @@ print("RMS of the encoded simulated traj real and the simulated traj latent", RM
 
 
 start_time = time.perf_counter()
-show_trajectory(np.swapaxes(encoded_traj[:, ::int(100/10), :], 2, 1), np.swapaxes(simulated_traj_latent[:, ::int(100/10), :], 2, 1), "Latent space trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories.gif", frame_step=2, fps=25)
+if ns < 40:
+    show_trajectory(np.swapaxes(encoded_traj, 2, 1), np.swapaxes(simulated_traj_latent, 2, 1), "Latent space trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories.gif", frame_step=2, fps=25)
+else:
+    show_trajectory(np.swapaxes(encoded_traj[:, ::int(100/10), :], 2, 1), np.swapaxes(simulated_traj_latent[:, ::int(100/10), :], 2, 1), "Latent space trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories.gif", frame_step=2, fps=25)
+
 print(f"Time for animation = {time.perf_counter() - start_time}")
 
 show_trajectory(np.swapaxes(simulated_traj_real_encoded[:, ::int(100/10), :], 2, 1), np.swapaxes(simulated_traj_latent[:, ::int(100/10), :], 2, 1), "Encoded simulated traj on left, simulated traj on right", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories_other.gif", frame_step=2, fps=25)
@@ -208,10 +213,16 @@ def loss_fn(autoencoder, target_traj):
     # loss_dynamics = mmd_traj(simulated_traj, target_traj)
     loss_dynamics = jnp.mean((simulated_traj - target_traj)**2)
 
+    #encoded_data = autoencoder.encode_traj(target_traj)
+
+    #simulated_latent = autoencoder.get_latent_trajectory(q_init)
+
+    #loss_latent_space = jnp.mean((simulated_latent - encoded_data)**2)
+
     # Here the loss encoding is only on the initial condition, and in reality it is performed in the loss dynamics
     # because the first term of (simulated_traj - target_traj)**2 is (q_init - decoder(encoder(q_init)))
 
-    return loss_dynamics 
+    return loss_dynamics #+ loss_latent_space
 
 
 @nnx.jit
@@ -232,7 +243,7 @@ def lax_step(carry, _):
     return output, output
 
 # Training loop 
-n_epochs = 2000
+n_epochs = 1000
 verbose = 50
 loss_vals = []
 
@@ -244,13 +255,17 @@ for _ in range(n_epochs//verbose):
     final_carry, carry =  lax.scan(lax_step, init_carry, None, verbose)
 
     autoencoder, optimizer, loss = final_carry
+    loss_vals.append(loss)
     pbar.update(verbose)
     pbar.set_postfix({'loss': loss})
     init_carry = (autoencoder, optimizer, loss)
 
 
-
-
+loss_evolution = np.arange(0, len(loss_vals)*verbose, verbose)
+loss_fig = plt.figure(figsize=(6,6), dpi=300)
+plt.semilogy(loss_evolution, loss_vals, color= "grey")
+plt.savefig(RESULT_DIR / "loss_fig.png")
+plt.close(loss_fig)
 landscape = autoencoder.landscape_flax.get_landscape()
 
 print(landscape)
@@ -264,7 +279,12 @@ fig = visualize_landscape_t(landscape, xx, yy, 20., color_scheme='fp_types', tra
 
 
 
-
+fig = visualize_landscape(landscape, xx, yy, regime=0, color_scheme='fp_types')
+plt.savefig(RESULT_DIR / "streamplot_landscape_trained.png")
+plt.close(fig)
+fig = visualize_potential(landscape, xx, yy, regime=0, color_scheme="fp_types")
+plt.savefig(RESULT_DIR / "potential_landscape_trained.png")
+plt.close(fig)
 
 
 ####### ANALYZING ##########
@@ -281,7 +301,10 @@ trained_real_traj = autoencoder(data[:, :, 0])
 trained_traj_latent = autoencoder.get_latent_trajectory(traj_init)
 print(trained_traj_latent.shape)
 
-show_trajectory(np.swapaxes(trained_encoded_traj[:, ::int(100/10), :], 2, 1), np.swapaxes(trained_traj_latent[:, ::int(100/10), :], 2, 1), "trained trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trained_trajectories.gif")
+if ns < 50:
+    show_trajectory(np.swapaxes(trained_encoded_traj, 2, 1), np.swapaxes(trained_traj_latent, 2, 1), "trained trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trained_trajectories.gif")
+else:
+    show_trajectory(np.swapaxes(trained_encoded_traj[:, ::int(100/10), :], 2, 1), np.swapaxes(trained_traj_latent[:, ::int(100/10), :], 2, 1), "trained trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trained_trajectories.gif")
 trained_real_traj_T = np.swapaxes(trained_real_traj, 1, 2)
 show_gene_evol(data_T[0], trained_real_traj_T[0], None,
                data_T[1], trained_real_traj_T[1], None,
