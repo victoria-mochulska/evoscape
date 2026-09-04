@@ -93,10 +93,14 @@ print("data shape", data.shape)
 
 ######## INDEXING FOR TIME AND SPACE ######
 percentage_time = 100
-percentage_space = 5
+percentage_space = 100
 limit_time = int(data.shape[2]*0.56)
-limit_space = int(data.shape[1]*0.40)
-data = data[:, limit_space:, :limit_time]
+start_embryon_space = 0.
+end_embryon_space = 1.
+
+limit_space_start = int(data.shape[1] * start_embryon_space)
+limit_space_end = int(data.shape[1] * end_embryon_space)
+data = data[:, limit_space_start:limit_space_end, :limit_time]
 skip_time = int(100/percentage_time)
 skip_space = int(100/percentage_space)
 data = data[:,::skip_space,::skip_time]
@@ -171,7 +175,7 @@ print("RMS of the encoded simulated traj real and the simulated traj latent", RM
 
 
 start_time = time.perf_counter()
-if ns < 40:
+if ns < 50:
     show_trajectory(np.swapaxes(encoded_traj, 2, 1), np.swapaxes(simulated_traj_latent, 2, 1), "Latent space trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories.gif", frame_step=2, fps=25)
 else:
     show_trajectory(np.swapaxes(encoded_traj[:, ::int(100/10), :], 2, 1), np.swapaxes(simulated_traj_latent[:, ::int(100/10), :], 2, 1), "Latent space trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories.gif", frame_step=2, fps=25)
@@ -187,7 +191,10 @@ simulated_traj_real_T = np.swapaxes(simulated_traj_real, 1, 2)
 show_gene_evol(data_T[0], simulated_traj_real_T[0], None,
                data_T[1], simulated_traj_real_T[1], None,
                data_T[3], simulated_traj_real_T[3], None,
-               data_T[2], simulated_traj_real_T[2], None, filename=RESULT_DIR / "gene_evol_pretraining.gif")
+               data_T[2], simulated_traj_real_T[2], None,
+               start=start_embryon_space,
+               end=end_embryon_space,
+               filename=RESULT_DIR / "gene_evol_pretraining.gif")
 
 ########## TRAINING ###########
 
@@ -213,16 +220,16 @@ def loss_fn(autoencoder, target_traj):
     # loss_dynamics = mmd_traj(simulated_traj, target_traj)
     loss_dynamics = jnp.mean((simulated_traj - target_traj)**2)
 
-    #encoded_data = autoencoder.encode_traj(target_traj)
+    encoded_data = autoencoder.encode_traj(target_traj)
 
-    #simulated_latent = autoencoder.get_latent_trajectory(q_init)
+    simulated_latent = autoencoder.get_latent_trajectory(q_init)
 
-    #loss_latent_space = jnp.mean((simulated_latent - encoded_data)**2)
+    loss_latent_space = jnp.mean((simulated_latent - encoded_data)**2)
 
     # Here the loss encoding is only on the initial condition, and in reality it is performed in the loss dynamics
     # because the first term of (simulated_traj - target_traj)**2 is (q_init - decoder(encoder(q_init)))
 
-    return loss_dynamics #+ loss_latent_space
+    return loss_dynamics + loss_latent_space
 
 
 @nnx.jit
@@ -243,7 +250,7 @@ def lax_step(carry, _):
     return output, output
 
 # Training loop 
-n_epochs = 1000
+n_epochs = 500
 verbose = 50
 loss_vals = []
 
