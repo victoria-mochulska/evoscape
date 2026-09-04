@@ -150,6 +150,8 @@ def show_gene_evol(
     data4_real,
     data4_sim,
     data4_truncated,
+    start=0.40,
+    end=1.,
     filename="animation.gif",
     interval=100,
     ylim=None
@@ -188,7 +190,7 @@ def show_gene_evol(
     blank_handle = ax.plot([], [], lw=1, color="lightsteelblue", label="True")
     shape_t, shape_x = data1_real.shape
 
-    x = np.linspace(40, 100, shape_x)
+    x = np.linspace(int(start*100), int(end*100), shape_x)
     t = np.arange(shape_t)
 
     ax.set_xlim(np.min(x), np.max(x))
