@@ -1,7 +1,7 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3, 4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 
-from evoscape.jax.flax_models.landscape_flax import LandscapeFlax
+from evoscape.jax.flax_models.landscape_flax import LandscapeFlax, AnisotropicLandscapeFlax
 from evoscape.jax.flax_models.autoencoder_flax import AutoEncoder
 
 
@@ -12,14 +12,16 @@ import optax
 from flax import nnx
 import sys
 from evoscape.landscapes import Landscape
-from evoscape.modules import Node, UnstableNode, Center, NegCenter
-from evoscape.morphogen_regimes import mr_const, mr_sigmoid
-from evoscape.landscape_visuals import plot_traj, visualize_landscape, visualize_landscape_t, visualize_potential
-from evoscape.jax.dynamics import state_probs
+from evoscape.modules import Node, UnstableNode, Center, NegCenter, AnisotropicNode
+#from evoscape.morphogen_regimes import mr_const, mr_sigmoid, mr_const_aniso
+from evoscape.jax.regimes import mr_const, mr_sigmoid, mr_const_aniso
+from evoscape.landscape_visuals import plot_traj, visualize_landscape_aniso, visualize_landscape_t, visualize_potential, visualize_potential_aniso
+from evoscape.jax.dynamics import state_probs, state_probs_aniso
 from evoscape.jax.utils import get_drosophile_data, get_facs_data
 from evoscape.jax.config import DATA_DIR, EVOSCAPE_DIR
 from evoscape.jax.losses import mmd_traj, sinkhorn_traj
 from evoscape.jax.nath_utils import *
+from evoscape.jax.converters import landscape_to_params
 import tqdm
 import time
 
@@ -32,24 +34,29 @@ plt.style.use("default")
 RESULT_DIR = EVOSCAPE_DIR.parent.parent / "results"
 
 
-
+key = jax.random.PRNGKey(0)
 
 ############ Creating Landscape #############
 
 # nombre de module
 n_modules = 10
 
+params = random_init2(key, n_modules, (-2, 2), (-2, 2), -0.5, 0.5)
+print(params)
+
 # position des modules
 xx = [jnp.cos(2*jnp.pi*k/n_modules)*3 for k in range(n_modules)] 
 yy = [jnp.sin(2*jnp.pi*k/n_modules)*3 for k in range(n_modules)]
 
-modules = [Node(x=x, y=y, a=np.array([0.2]), s=np.array([1.0]), tau=1.) for x,y in zip(xx, yy)]
+modules = [AnisotropicNode(x=x, y=y, a=np.array([0.2]), sx=np.array([1.0]), sy=np.array([1.0]), th=np.array([0.0]), tau=1.) for x,y in zip(xx, yy)]
+
+#modules = [AnisotropicNode(x=module[0], y=module[1], a=np.array([module[2]]), sx=np.array([module[3]]), sy=np.array([module[4]]), th=np.array([module[5]]), tau=1.) for module in params]
 
 landscape = Landscape(
     module_list=modules,
     A0=0.00,
     init_cond=(0.0, 0.0),
-    regime=mr_const,
+    regime=mr_const_aniso,
     n_regimes=1,
     # morphogen_times=(50.,),
 )
@@ -63,10 +70,23 @@ npoints = 201
 q = np.linspace(-L, L, npoints)
 xx, yy = np.meshgrid(q, q, indexing='xy')
 
-fig = visualize_landscape(landscape, xx, yy, regime=0, color_scheme='fp_types')
+"""params_dynamic, params_static, Js = landscape_to_params(landscape)
+
+vect_field = JAXflow_grad(xx, yy, params_dynamic)
+pot = JAXgaussian_mixture(xx, yy, params_dynamic)
+
+fig = show_streamplot(xx, yy, vect_field, "Streamplot with anisotropic")
 plt.savefig(RESULT_DIR / "streamplot_landscape.png")
 plt.close(fig)
-fig = visualize_potential(landscape, xx, yy, regime=0, color_scheme="fp_types")
+
+fig = show_potential(xx, yy, pot, "Potential with anisotropic", save=True, filename=RESULT_DIR / "potential_landscape.png")"""
+
+fig = visualize_landscape_aniso(landscape, xx, yy, regime=0, color_scheme='fp_types')
+plt.savefig(RESULT_DIR / "streamplot_landscape.png")
+plt.close(fig)
+
+
+fig = visualize_potential_aniso(landscape, xx, yy, regime=0, color_scheme="fp_types")
 plt.savefig(RESULT_DIR / "potential_landscape.png")
 plt.close(fig)
 
@@ -88,12 +108,17 @@ Kr = extract_gene_data(DATA_DIR / "data_drosophiles" / "Kr_3002.txt")
 Kni = extract_gene_data(DATA_DIR / "data_drosophiles" / "Kni_3002.txt")
 data = np.array([Gt, Kni, Hb, Kr])
 data = np.swapaxes(data, 1, 2)
+print("Max of data", jnp.max(data, axis=(1,2)))
+max_data = jnp.max(data)
+data = data/ max_data
+print("Max of data", jnp.max(data))
+
 print("data shape", data.shape)
 
 
 ######## INDEXING FOR TIME AND SPACE ######
 percentage_time = 100
-percentage_space = 100
+percentage_space = 10
 limit_time = int(data.shape[2]*0.56)
 start_embryon_space = 0.
 end_embryon_space = 1.
@@ -114,7 +139,7 @@ ns = data.shape[1]
 
 # Initializing the landscape 
 rngs = nnx.Rngs(0)
-landscape_flax = LandscapeFlax(landscape, rngs)
+landscape_flax = AnisotropicLandscapeFlax(landscape, rngs)
 
 init_noise = 0.
 t0 = 0.
@@ -125,7 +150,7 @@ noise = 0.
 
 landscape_flax.set_simulation(init_noise=init_noise, t0=t0, tf=tf, nt=nt, ndt=ndt, noise=noise)
 landscape_flax.set_regime_params(signal_param=None)
-landscape_flax.set_state_probs(state_probs)
+landscape_flax.set_state_probs(state_probs_aniso)
 
 # Initialiazing the decoder
 dims_encoder = [4, 8, 4, 2]
@@ -175,7 +200,7 @@ print("RMS of the encoded simulated traj real and the simulated traj latent", RM
 
 
 start_time = time.perf_counter()
-if ns < 50:
+if ns < 100:
     show_trajectory(np.swapaxes(encoded_traj, 2, 1), np.swapaxes(simulated_traj_latent, 2, 1), "Latent space trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories.gif", frame_step=2, fps=25)
 else:
     show_trajectory(np.swapaxes(encoded_traj[:, ::int(100/10), :], 2, 1), np.swapaxes(simulated_traj_latent[:, ::int(100/10), :], 2, 1), "Latent space trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trajectories.gif", frame_step=2, fps=25)
@@ -201,9 +226,13 @@ show_gene_evol(data_T[0], simulated_traj_real_T[0], None,
 
 
 # Defining the optimizer 
-tx = optax.adamw(
+"""tx = optax.adamw(
     learning_rate = 2e-2,
     weight_decay = 2e-3,
+)"""
+
+tx = optax.adam(
+    learning_rate = 2e-2,
 )
 
 optimizer = nnx.Optimizer(autoencoder, tx, wrt=nnx.Param)
@@ -229,7 +258,7 @@ def loss_fn(autoencoder, target_traj):
     # Here the loss encoding is only on the initial condition, and in reality it is performed in the loss dynamics
     # because the first term of (simulated_traj - target_traj)**2 is (q_init - decoder(encoder(q_init)))
 
-    return loss_dynamics + loss_latent_space
+    return loss_dynamics #+ loss_latent_space
 
 
 @nnx.jit
@@ -250,7 +279,7 @@ def lax_step(carry, _):
     return output, output
 
 # Training loop 
-n_epochs = 500
+n_epochs = 10000
 verbose = 50
 loss_vals = []
 
@@ -273,7 +302,7 @@ loss_fig = plt.figure(figsize=(6,6), dpi=300)
 plt.semilogy(loss_evolution, loss_vals, color= "grey")
 plt.savefig(RESULT_DIR / "loss_fig.png")
 plt.close(loss_fig)
-landscape = autoencoder.landscape_flax.get_landscape()
+landscape = autoencoder.landscape_flax.get_landscape_aniso()
 
 print(landscape)
 
@@ -282,11 +311,21 @@ npoints = 201
 q = np.linspace(-L, L, npoints)
 xx, yy = np.meshgrid(q, q, indexing='xy')
 
-fig = visualize_landscape_t(landscape, xx, yy, 20., color_scheme='fp_types', traj_times=(0., 20., 201), traj_init_cond=(2.,2.), traj_start=100)
+#fig = visualize_landscape_t(landscape, xx, yy, 20., color_scheme='fp_types', traj_times=(0., 20., 201), traj_init_cond=(2.,2.), traj_start=100)
 
 
+"""params_dynamic, params_static, Js = landscape_to_params(landscape)
 
-fig = visualize_landscape(landscape, xx, yy, regime=0, color_scheme='fp_types')
+vect_field = JAXflow_grad(xx, yy, params_dynamic)
+pot = JAXgaussian_mixture(xx, yy, params_dynamic)
+
+fig = show_streamplot(xx, yy, vect_field, "Streamplot with anisotropic")
+plt.savefig(RESULT_DIR / "streamplot_landscape.png")
+plt.close(fig)
+
+fig = show_potential(xx, yy, pot, "Potential with anisotropic", save=True, filename=RESULT_DIR / "potential_landscape.png")"""
+
+fig = visualize_landscape_aniso(landscape, xx, yy, regime=0, color_scheme='fp_types')
 plt.savefig(RESULT_DIR / "streamplot_landscape_trained.png")
 plt.close(fig)
 fig = visualize_potential(landscape, xx, yy, regime=0, color_scheme="fp_types")
@@ -308,7 +347,7 @@ trained_real_traj = autoencoder(data[:, :, 0])
 trained_traj_latent = autoencoder.get_latent_trajectory(traj_init)
 print(trained_traj_latent.shape)
 
-if ns < 50:
+if ns < 100:
     show_trajectory(np.swapaxes(trained_encoded_traj, 2, 1), np.swapaxes(trained_traj_latent, 2, 1), "trained trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trained_trajectories.gif")
 else:
     show_trajectory(np.swapaxes(trained_encoded_traj[:, ::int(100/10), :], 2, 1), np.swapaxes(trained_traj_latent[:, ::int(100/10), :], 2, 1), "trained trajectories", "Encoded data", "Simulated trajectories", filename=RESULT_DIR / "trained_trajectories.gif")
@@ -316,7 +355,10 @@ trained_real_traj_T = np.swapaxes(trained_real_traj, 1, 2)
 show_gene_evol(data_T[0], trained_real_traj_T[0], None,
                data_T[1], trained_real_traj_T[1], None,
                data_T[3], trained_real_traj_T[3], None,
-               data_T[2], trained_real_traj_T[2], None, filename=RESULT_DIR / "gene_evol_trained.gif")
+               data_T[2], trained_real_traj_T[2], None,
+               start=start_embryon_space,
+               end=end_embryon_space, 
+               filename=RESULT_DIR / "gene_evol_trained.gif")
 
 
 
