@@ -87,6 +87,116 @@ def _integrate(key, y0, t0, tf, nt, ndt, noise, dynamic, static, regime, get_sta
     return key_final, traj, states
 
 
+
+
+
+
+
+
+# Base flow function to work with for anisotropic modules
+# @jit
+def _flow_aniso(q_flat, xs, ys, sigx, sigy, a, th, Js, A0, x0):
+    x, y = q_flat
+    xr = x[None] - xs[:, None]
+    yr = y[None] - ys[:, None]
+    R = jnp.stack([
+    jnp.cos(th),
+    jnp.sin(th),
+    -jnp.sin(th),
+    jnp.cos(th)
+    ], axis=-1).reshape(-1, 2, 2)
+
+    xr_rot = xr * R[:, 0, 0, None] + yr * R[:, 1, 0, None]
+    yr_rot = xr * R[:, 0, 1, None] + yr * R[:, 1, 1, None]
+
+    nonzero_sigx_sq = jnp.where(sigx == 0, 1, sigx)**2
+    nonzero_sigy_sq = jnp.where(sigy == 0, 1, sigy)**2
+
+    w = a[:, None] * jnp.exp(-0.5*( (xr_rot**2)/(nonzero_sigx_sq[:, None]) + (yr_rot**2)/(nonzero_sigy_sq[:, None])  ))
+
+    #putting the reste
+    dx_rot = Js[:, 0, 0, None] * xr_rot + Js[:, 0, 1, None] * yr_rot
+    dy_rot = Js[:, 1, 0, None] * xr_rot + Js[:, 1, 1, None] * yr_rot
+
+    dx = dx_rot * R[:, 0, 0, None] * nonzero_sigy_sq[:, None] + dy_rot * R[:, 0, 1, None] * nonzero_sigx_sq[:, None]
+    dy = dx_rot * R[:, 1, 0, None] * nonzero_sigy_sq[:, None] + dy_rot * R[:, 1, 1, None] * nonzero_sigx_sq[:, None]
+
+    dX = A0 * (-(x - x0[0]) ** 3) + jnp.sum(w * dx, axis=0)
+    dY = A0 * (-(y - x0[1]) ** 3) + jnp.sum(w * dy, axis=0)
+    derivs = jnp.stack((dX, dY), axis=0)
+
+    return derivs
+
+
+# Function to compute a, sx and sy for a given time t and a given regime
+# @partial(jit, static_argnames=("regime",))
+def get_current_par_aniso(t, dynamic, regime):
+    a = dynamic.module.a
+    sx = dynamic.module.sx
+    sy = dynamic.module.sy
+    th = dynamic.module.th
+
+    def compute(i):
+        return regime(t, a[i], sx[i], sy[i], th[i])
+
+    sx_t, sy_t, a_t, th_t = vmap(compute)(jnp.arange(a.shape[0]))
+    return a_t * (sx_t ** 2) * (sy_t ** 2), sx_t, sy_t, a_t, th_t
+
+
+# Get_flow depending on time: the use of get_current_par is recquired !
+# @partial(jit, static_argnames=("regime",))
+def get_flow_aniso(t, coordinate, dynamic, static, regime):
+    a0 = static.A0
+    xs = dynamic.module.x
+    ys = dynamic.module.y
+    _, sigx, sigy, a, th = get_current_par_aniso(t, dynamic, regime)
+    x0 = static.x0
+    Js = static.module.J
+    return _flow_aniso(coordinate, xs, ys, sigx, sigy, a, th, Js, a0, x0)
+
+
+# Base integration function to work with
+# @partial(jit, static_argnames=("nt", "ndt", "get_states", "regime"))
+def _integrate_aniso(key, y0, t0, tf, nt, ndt, noise, dynamic, static, regime, get_states):
+    dt = (tf - t0) / (nt - 1) / ndt
+    sqrt_dt = jnp.sqrt(dt)
+
+    def outer_step(carry, _):
+        key, t, y = carry
+        key, subkey = jrnd.split(key)
+        etas = jrnd.normal(subkey, (ndt,) + y.shape, dtype=y.dtype)
+
+        def inner_step(carry, eta):
+            t, y = carry
+            deriv = get_flow_aniso(t, y, dynamic, static, regime)
+            y = y + deriv * dt + noise * eta * sqrt_dt
+            t = t + dt
+            return (t, y), None
+
+        (t, y), _ = lax.scan(inner_step, (t, y), etas)
+        s = get_states(t, y, dynamic, static, regime)
+        return (key, t, y), (y, s)
+
+    state0 = get_states(t0, y0, dynamic, static, regime)
+    (key_final, _, _), (ys, states) = lax.scan(outer_step, (key, t0, y0), None, length=nt - 1)
+
+    traj = jnp.concatenate([y0[None], ys], axis=0).transpose(1, 2, 0)
+    states = jnp.concatenate([state0[None], states], axis=0).T
+    return key_final, traj, states
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Definition of get_states with integration of regime function which was previously defined.
 # @partial(jit, static_argnames=("measure", "prob_threshold", "abs_threshold", "regime"))
 def get_cell_states(t, coordinate, dynamic, static, regime, measure="gaussian", prob_threshold=0.0, abs_threshold=0.0):
@@ -143,6 +253,30 @@ def state_probs(t, coordinate, dynamic, static, regime):
         mask[None, :],
         0.0,
         jnp.exp(-dist / (2 * nonzero_st ** 2)) / (nonzero_st ** 2),
+    )
+    sum_values = jnp.sum(gaussian_values, axis=1, keepdims=True)
+    safe_sum = jnp.where(sum_values == 0, 1.0, sum_values)
+    probs = gaussian_values / safe_sum
+
+    return probs
+
+
+#  Check/update
+# @partial(jit, static_argnames=("regime",))
+def state_probs_aniso(t, coordinate, dynamic, static, regime):
+    _, sxt, syt, at, tht = get_current_par_aniso(t, dynamic, regime)
+    dist = jnp.sum(
+        (coordinate.T[:, :, None] - jnp.array([dynamic.module.x, dynamic.module.y])) ** 2,
+        axis=1,
+    )
+
+    mask = (sxt == 0) | (syt == 0) | (at == 0)
+    nonzero_sxt = jnp.where(mask, 1.0, sxt)
+    nonzero_syt = jnp.where(mask, 1.0, syt)
+    gaussian_values = jnp.where(
+        mask[None, :],
+        0.0,
+        jnp.exp(-dist / (2 * nonzero_sxt ** 2)) / (nonzero_sxt ** 2),
     )
     sum_values = jnp.sum(gaussian_values, axis=1, keepdims=True)
     safe_sum = jnp.where(sum_values == 0, 1.0, sum_values)

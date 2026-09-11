@@ -180,6 +180,193 @@ class Module:
 
 
 
+
+class AnisotropicModule:
+    """ Parent class for a generic module (local dynamics kernel) """
+    def __init__(self, x=0., y=0., a=1., sx=1., sy=1., th=0., tau=None, immutable_pars_list=()):
+        """
+        :param x: float
+        :param y: float
+        :param a: float, list, or array - parameters specifying amplitude
+        :param sx: float, list, or array - parameters specifying width/size in x
+        :param sy: float, list, or array - parameters specifying width/size in y
+        :param th: float, list, or array - parameters specifying the rotation
+        :param tau: float - timescale parameter
+        :param immutable_pars_list: list of par names (strings)
+        All non-None parameters are mutable by default, unless specified in immutable_pars_list.
+        Immutable parameter values are not mutated/updated by optimization but can still be changed manually.
+        """
+        self.x = x
+        self.y = y
+        self.a = np.asarray(a)
+        self.sx = np.asarray(sx)
+        self.sy = np.asarray(sy)
+        self.th = np.asarray(th)
+        self.tau = tau
+
+        self.mutable_parameters_list = [par for par in vars(self).keys() if vars(self)[par] is not None]
+        for par in immutable_pars_list:
+            self.remove_mutable_parameter(par)
+        self.immutable_idx = []  # for partly mutable vector parameters: indices of elements to keep fixed
+
+        # parameter priors (limits or choice values) can be specified for each module separately:
+        self.par_limits = {}
+        self.par_choice_values = {}
+
+    def __str__(self):
+        # TODO: add precision (decimals)
+        module_str = self.__class__.__name__ + ': '
+        pars_str = []
+        # for par in self.mutable_parameters_list:
+        for par in ('x', 'y', 'a', 'sx', 'sy', 'th', 'tau'):
+            value = getattr(self, par)
+            if value is not None:
+                if isinstance(value, np.ndarray):
+                    par_str = np.array2string(value, separator=',', floatmode='maxprec_equal')
+                else:
+                    par_str = str(value)
+                pars_str.append(par + '=' + par_str)
+        module_str += '; '.join(pars_str)
+        return module_str
+
+    # _________________________________________________________________________________________________________
+    @classmethod
+    def generate(cls, par_limits, par_choice_values, n_regimes, immutable_pars_list=()):
+        """
+        Generate a random module from given priors (limits or choice values)
+        Either par_limits or par_choice_values should be specified for x, y, a and s; tau is optional
+        :param par_limits: dict of lower and upper bounds for a uniform prior, e.g: {'x' : (-1, 1), 'y' : (-1, 1)}
+        :param par_choice_values: dict of discrete possible values, e.g: {'a' : (0, 0.5, 1.)}
+        :param n_regimes: int (1, 2, or 3) - length of a and s to sample = number of signalling regimes
+        :param immutable_pars_list: parameters to make immutable after random generation
+        """
+        a = np.ones(n_regimes)
+        sx = np.ones(n_regimes)
+        sy = np.ones(n_regimes)
+        th = np.ones(n_regimes)
+
+        if 'tau' in par_limits:
+            tau = par_limits['tau'][0]
+        elif 'tau' in par_choice_values:
+            tau = par_choice_values['tau'][0]
+        else:
+            tau = None
+
+        module = cls(a=a, sx=sx, sy=sy, th=th, tau=tau)
+        for par in module.mutable_parameters_list:
+            value = getattr(module, par)
+            if par in par_limits:
+                if isinstance(value, np.ndarray):
+                    if isinstance(par_limits[par][0], (list, tuple, np.ndarray)):
+                        arr = np.array([np.random.uniform(low, high) for (low, high) in par_limits[par]])
+                    else:
+                        arr = np.random.uniform(*par_limits[par], len(value))
+                    setattr(module, par, arr)
+                else:
+                    setattr(module, par, np.random.uniform(*par_limits[par]))
+            elif par in par_choice_values:
+                if isinstance(value, np.ndarray):
+                    setattr(module, par, np.random.choice(par_choice_values[par], size=len(value)))
+                else:
+                    setattr(module, par, np.random.choice(par_choice_values[par]))
+            else:
+                raise ValueError("Limits or choice values not provided for parameter " + par)
+        for par in immutable_pars_list:
+            module.remove_mutable_parameter(par)
+        return module
+
+    def get_current_pars(self, t, regime, t0=None, t1=None, t2=None, t3=None, t4=None):
+        """
+        Calculate the amplitude and size of the module at time t, based on the a and s parameters and a chosen regime.
+        :param t: float
+        :param regime: function (list provided in morphogen_regimes)
+        :param t0: float, optional
+        :param t1: float, optional
+        :param t2: float, optional
+        :return: V - volume, s_t - size at time t, a_t - amplitude at time t
+        """
+        if self.a.size == 1 and self.sx.size == 1 and self.sy.size == 1 and self.th.size == 1:
+            V = self.a.item() * self.sx.item() ** 2 * self.sy.item() ** 2
+            return V, self.sx.item(), self.sy.item(), self.a.item(), self.th.item()
+
+
+        # TO MODIFY TO ACCOUNT FOR SX AND SY AND TH
+        sx_t, sy_t, a_t, th_t = regime(t, self.a, self.s, t0=t0, t1=t1, t2=t2, t3=t3, t4=t4, tau=self.tau)
+        V = a_t * (sx_t ** 2) * (sy_t ** 2)
+        return V, sx_t, sy_t, a_t, th_t
+
+    def mutate(self, par_limits, par_choice_values):
+        """
+        Randomly sample one new parameter value from provided priors.
+        For array-like parameters (a, s), only one element is mutated at a time.
+        If the module contains its own par_limits or par_choice_values for some parameters, these will be prioritized.
+        :param par_limits: dict of lower and upper bounds for a uniform prior, e.g: {'x' : (-1, 1), 'y' : (-1, 1)}
+        :param par_choice_values: dict of discrete possible values, e.g: {'a' : (0, 0.5, 1.)}
+        """
+        rand_par = random.choice(self.mutable_parameters_list)
+        attr = getattr(self, rand_par)
+        is_array = isinstance(attr, np.ndarray)
+        if is_array:
+            # pick an element to mutate
+            index = np.random.randint(attr.size)
+            #  resample if the element is immutable:
+            while index in self.immutable_idx:
+                index = np.random.randint(attr.size)
+
+        if rand_par in self.par_limits:
+            # new_val = np.random.uniform(*self.par_limits[rand_par])
+            limits = self.par_limits[rand_par]
+            if is_array and isinstance(limits, (list, tuple)) and isinstance(limits[0], (list, tuple)):
+                # per-element limits
+                new_val = np.random.uniform(*limits[index])
+            else:
+                new_val = np.random.uniform(*limits)
+
+        elif rand_par in self.par_choice_values:
+            new_val = np.random.choice(self.par_choice_values[rand_par])
+
+        elif rand_par in par_limits:
+            limits = par_limits[rand_par]
+            if is_array and isinstance(limits, (list, tuple)) and isinstance(limits[0], (list, tuple)):
+                # per-element limits
+                new_val = np.random.uniform(*limits[index])
+            else:
+                new_val = np.random.uniform(*limits)
+            # new_val = np.random.uniform(*par_limits[rand_par])
+        elif rand_par in par_choice_values:
+            new_val = np.random.choice(par_choice_values[rand_par])
+        else:
+            raise ValueError("Limits or choice values not provided for parameter " + rand_par)
+
+        if is_array:
+            attr[index] = new_val
+        else:
+            setattr(self, rand_par, new_val)
+
+    def add_mutable_parameter(self, par):
+        if par not in self.mutable_parameters_list:
+            self.mutable_parameters_list.append(par)
+        else:
+            print(par + ' has already been included.')
+
+    def remove_mutable_parameter(self, par):
+        if par in self.mutable_parameters_list:
+            self.mutable_parameters_list.remove(par)
+        else:
+            print(par + ' is not included.')
+
+    def set_immutable_idx(self, idx):
+        idx = list(idx)
+        idx.sort()
+        if idx == list(range(self.a.size)):
+            print('All vector elements are immutable - setting immutable parameters')
+            self.remove_mutable_parameter('a')
+            self.remove_mutable_parameter('sx')
+            self.remove_mutable_parameter('sy')
+        else:
+            self.immutable_idx = idx
+
+
 # _______________________________________________________________________________
 
 # _______________________________________________________________________________
@@ -211,4 +398,37 @@ class NegCenter(Module):
     """ Clockwise rotation module """
     def __init__(self, x=0., y=0., a=1., s=1, tau=None):
         super().__init__(x=x, y=y, a=a, s=s, tau=tau)
+        self.J = np.array(((0., +1.), (-1., 0.)))
+
+
+
+
+# ANISOTROPIC AND ROTATED MODULES CHILD CLASSES
+
+
+class AnisotropicNode(AnisotropicModule):
+    """ Attracting module, gradient dynamics """
+    def __init__(self, x=0, y=0, a=1., sx=1., sy=1., th=0., tau=None):
+        super().__init__(x=x, y=y, a=a, sx=sx, sy=sy, th=th, tau=tau)
+        self.J = np.array(((-1, 0.), (0., -1)))
+
+
+class AnisotropicUnstableNode(AnisotropicModule):
+    """ Repelling module, gradient dynamics """
+    def __init__(self, x=0., y=0., a=1., sx=1., sy=1., th=0., tau=None):
+        super().__init__(x=x, y=y, a=a, sx=sx, sy=sy, th=th, tau=tau)
+        self.J = np.array(((+1, 0.), (0., +1)))
+
+
+class AnisotropicCenter(AnisotropicModule):
+    """ Counterclockwise rotation module """
+    def __init__(self, x=0., y=0., a=1., sx=1., sy=1., th=0., tau=None):
+        super().__init__(x=x, y=y, a=a, sx=sx, sy=sy, th=th, tau=tau)
+        self.J = np.array(((0., -1.), (+1., 0.)))
+
+
+class AnisotropicNegCenter(AnisotropicModule):
+    """ Clockwise rotation module """
+    def __init__(self, x=0., y=0., a=1., sx=1, sy=1, th=0., tau=None):
+        super().__init__(x=x, y=y, a=a, sx=sx, sy=sy, th=th, tau=tau)
         self.J = np.array(((0., +1.), (-1., 0.)))

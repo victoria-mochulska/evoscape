@@ -18,6 +18,10 @@ fp_type_colors = {
     'UnstableNode': 'tab:blue',
     'Center': 'tab:purple',
     'NegCenter': 'hotpink',
+    'AnisotropicNode': 'tab:green',
+    'AnisotropicUnstableNode': 'tab:blue',
+    'AnisotropicCenter': 'tab:purple',
+    'AnisotropicNegCenter': 'hotpink',
 }
 
 # to use for modules if colored by order in the module_list
@@ -71,6 +75,65 @@ def visualize_landscape(landscape, xx, yy, regime, color_scheme='fp_types', draw
                 fill = True
                 lw = 0
             circles.append(plt.Circle((module.x, module.y), 1.18 * sig, color=color,
+                                      fill=fill, alpha=0.22 * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
+    morphogen_times = landscape.morphogen_times
+    landscape.morphogen_times = np.arange(landscape.n_regimes) + 0.5
+    (dX, dY), potential, rot_potential = landscape(float(regime), (xx, yy), return_potentials=True)
+
+    fig, stream_ax = plt.subplots(1, 1, figsize=(5, 5))
+    circles_ax = stream_ax
+    if draw_circles:
+        for i in range(len(landscape.module_list)):
+            circles_ax.add_patch(copy(circles[i]))
+
+    stream_ax.streamplot(xx, yy, dX, dY, density=density, arrowsize=2., arrowstyle='->', linewidth=1,
+                         color='grey')
+    stream_ax.contour(xx, yy, dX, (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
+    stream_ax.contour(xx, yy, dY, (0,), colors=('k',), linestyles='--', linewidths=1.5, alpha=0.7)
+
+    stream_ax.set_xlim([np.min(xx), np.max(xx)])
+    stream_ax.set_ylim([np.min(yy), np.max(yy)])
+    stream_ax.set_xticks([])
+    stream_ax.set_yticks([])
+    landscape.morphogen_times = morphogen_times
+    # plt.show()
+    return fig
+
+def visualize_landscape_aniso(landscape, xx, yy, regime, color_scheme='fp_types', draw_circles=True):
+    """ Simple visualization of landscape flow and modules in one regime. """
+    density = 0.5
+    curl = np.zeros((len(landscape.module_list)), dtype='bool')
+    circles = []
+    for i, module in enumerate(landscape.module_list):
+        if module.__class__.__name__ == 'AnisotropicCenter' or module.__class__.__name__ == 'AnisotropicNegCenter':
+            curl[i] = 1
+
+    if draw_circles:
+        for i, module in enumerate(landscape.module_list):
+            if module.a.size == 1 and module.sx.size == 1 and module.sy.size == 1 and regime == 0:
+                sigx = module.sx.item()
+                sigy = module.sy.item()
+                A = module.a.item()
+            else:
+                sigx = module.sx[regime]
+                sigy = module.sy[regime]
+                A = module.a[regime]
+
+            if color_scheme == 'fp_types':
+                color = fp_type_colors[module.__class__.__name__]
+            elif color_scheme == 'order':
+                color = order_colors[i]
+            else:
+                color = 'grey'
+
+            # for negative amplitude - non-filled cicle
+            if A < 0:
+                fill = False
+                lw = 2
+            else:
+                fill = True
+                lw = 0
+            circles.append(plt.Circle((module.x, module.y), 1.18 * sigx*sigy, color=color,
                                       fill=fill, alpha=0.22 * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
     morphogen_times = landscape.morphogen_times
     landscape.morphogen_times = np.arange(landscape.n_regimes) + 0.5
@@ -195,6 +258,95 @@ def visualize_cell_states(landscape, xx, yy, t, abs_threshold=0.):
 
 
 def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp_types', elev=None, azim=None, offset=2,
+                        cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True):
+    curl = np.zeros((len(landscape.module_list)), dtype='bool')
+    # circles = []
+    fig, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(6, 6))
+    ax.view_init(elev=elev, azim=azim)
+
+    if t is None and regime is not None:
+        morphogen_times = landscape.morphogen_times
+        landscape.morphogen_times = np.arange(landscape.n_regimes) + 0.5
+        t = float(regime)
+    (dX, dY), potential, rot_potential = landscape(t, (xx, yy), return_potentials=True)
+    if cmap_center is None:
+        cmap_center = potential[0, 0]
+    if rot:
+        potential = rot_potential
+        cmap = 'RdBu_r'
+    else:
+        cmap = scm.cork.reversed()
+
+    if zlim is None:
+        ax.set_zlim([np.min(potential) - offset, np.max(potential) + 2])
+        zlow = np.min(potential) - offset
+    else:
+        ax.set_zlim(zlim)
+        zlow = zlim[0]
+    ax.contour(xx, yy, potential, zdir='z', offset=zlow, cmap=cmap, norm=CenteredNorm(cmap_center))
+    ax.plot_surface(xx, yy, potential, cmap=cmap, linewidth=0, antialiased=False, norm=CenteredNorm(cmap_center))
+    if rot_contour:
+        contour = plt.contour(xx, yy, rot_potential, levels=7, alpha=0)
+        cmap_contour = plt.get_cmap('RdBu_r')
+        norm = CenteredNorm(0., halfrange=np.max(np.abs(rot_potential)))
+        for i, level_segments in enumerate(contour.allsegs[::-1]):
+            level_value = contour.levels[-i]
+            line_color = cmap_contour(norm(level_value))
+            for segment in level_segments:
+                if len(segment) < min_contour_segment:
+                    continue  # Skip small segments
+                x_coords = segment[:, 0]
+                y_coords = segment[:, 1]
+                derivs, z_coords, rot_z = landscape(t, (x_coords, y_coords), return_potentials=True)
+                ax.plot(x_coords, y_coords, z_coords, color=line_color, linestyle='-', linewidth=2, zorder=100)
+
+                arrow_size = 0.3
+
+                if len(segment) > 80:
+                    for mid in (len(x_coords) // 3, len(x_coords)//3*2):
+                        base = np.array([x_coords[mid], y_coords[mid], z_coords[mid]])
+                        direction = np.array([x_coords[mid] - x_coords[mid-1], y_coords[mid] - y_coords[mid-1],
+                                              z_coords[mid] - z_coords[mid-1]])
+                        direction /= np.linalg.norm(direction)
+                        # if level_value < 0:
+                        #     direction = -direction
+                        perp_vector = np.cross(direction, np.array([0, 0, 1]))
+                        perp_vector /= np.linalg.norm(perp_vector)  # Normalize
+                        left = base + arrow_size * (perp_vector * 0.4 - direction)
+                        right = base + arrow_size * (-perp_vector * 0.4 - direction)
+                        ax.plot(*zip(left, base, right), color=line_color, linewidth=1.5, zorder=100)
+
+    if scatter:
+        for i, module in enumerate(landscape.module_list):
+            if module.__class__.__name__ == 'Center' or module.__class__.__name__ == 'NegCenter':
+                curl[i] = 1
+            if color_scheme == 'fp_types':
+                color = fp_type_colors[module.__class__.__name__]
+            elif color_scheme == 'order':
+                color = order_colors[i]
+            else:
+                color = 'grey'
+            ax.scatter(module.x, module.y, zlow, s=25, color=color, marker='D', zorder=20)
+
+    if regime is not None:
+        landscape.morphogen_times = morphogen_times
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.zaxis.set_tick_params(color='white')
+    ax.set_zticklabels([])
+    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+
+    # plt.tight_layout()
+    if not axes:
+        ax.set_axis_off()
+    # plt.show()
+    return fig
+
+
+def visualize_potential_aniso(landscape, xx, yy, regime=None, t=None, color_scheme='fp_types', elev=None, azim=None, offset=2,
                         cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True):
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
     # circles = []

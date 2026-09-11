@@ -20,7 +20,6 @@ class ModuleDynamic(NamedTuple):
     a: jnp.ndarray
     s: jnp.ndarray
 
-
 class LandscapeStatic(NamedTuple):
     A0: float
     x0: jnp.ndarray
@@ -33,3 +32,43 @@ class LandscapeStatic(NamedTuple):
 
 class LandscapeDynamic(NamedTuple):
     module: ModuleDynamic
+
+
+
+
+### FOR ANISOTROPIC MODULE COMPATIBILITY, TO CLEAN LATER
+    
+
+class AnisotropicModuleStatic(NamedTuple):
+    #size (n_modules,2,2)
+    J: jnp.ndarray
+
+    #size (n_modules,)
+    tau: jnp.ndarray
+    use_tau: jnp.ndarray
+
+
+class AnisotropicModuleDynamic(NamedTuple):
+    #size (n_modules,)
+    x: jnp.ndarray
+    y: jnp.ndarray
+    #size (n_modules,n_regimes)
+    a: jnp.ndarray
+    sx: jnp.ndarray
+    sy: jnp.ndarray
+    th: jnp.ndarray
+
+
+class AnisotropicLandscapeStatic(NamedTuple):
+    A0: float
+    x0: jnp.ndarray
+    n_regimes: int
+    regime_id: int #the number associated with the regime
+    morphogen_times: jnp.ndarray
+    init_cond: jnp.ndarray
+    module: AnisotropicModuleStatic
+
+
+class AnisotropicLandscapeDynamic(NamedTuple):
+    module: AnisotropicModuleDynamic
+

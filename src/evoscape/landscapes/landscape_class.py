@@ -3,7 +3,7 @@ import random
 from copy import deepcopy
 
 from .. import mr_sigmoid
-from evoscape.modules.module_class import Node, UnstableNode, Center, NegCenter
+from evoscape.modules.module_class import Node, UnstableNode, Center, NegCenter, AnisotropicNode, AnisotropicUnstableNode, AnisotropicCenter, AnisotropicNegCenter
 
 def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
     x, y = q_flat
@@ -29,6 +29,47 @@ def _flow(q_flat, xs, ys, sign, curl, sig, a, Js, A0, x0, return_potentials):
         pot = np.sum(w * coefs, axis=0) + A0 / 4 * ((x - x0[0]) ** 4 + (y - x0[1]) ** 4)
         pot_rot = np.sum(w * coefs_rot, axis=0)
         return derivs, pot, pot_rot
+    return derivs
+
+
+def _flow_aniso(q_flat, xs, ys, sign, curl, sigx, sigy, a, th, Js, A0, x0, return_potentials):
+    x, y = q_flat
+    xr = x[None, :] - xs
+    yr = y[None, :] - ys
+    R = np.stack([
+    np.cos(th),
+    np.sin(th),
+    -np.sin(th),
+    np.cos(th)
+    ], axis=-1).reshape(-1, 2, 2)
+
+    xr_rot = xr * R[:, 0, 0, None] + yr * R[:, 1, 0, None]
+    yr_rot = xr * R[:, 0, 1, None] + yr * R[:, 1, 1, None]
+
+    nonzero_sigx_sq = np.where(sigx == 0, 1, sigx)**2
+    nonzero_sigy_sq = np.where(sigy == 0, 1, sigy)**2
+
+    w = a[:, None] * np.exp(-0.5*( (xr_rot**2)/(nonzero_sigx_sq[:, None]) + (yr_rot**2)/(nonzero_sigy_sq[:, None])  ))
+
+    #putting the reste
+    dx_rot = Js[:, :, 0, 0] * xr_rot + Js[:, :, 0, 1] * yr_rot
+    dy_rot = Js[:, :, 1, 0] * xr_rot + Js[:, :, 1, 1] * yr_rot
+    dx = dx_rot * R[:, 0, 0, None] * nonzero_sigy_sq[:, None] + dy_rot * R[:, 0, 1, None] * nonzero_sigx_sq[:, None]
+    dy = dx_rot * R[:, 1, 0, None] * nonzero_sigy_sq[:, None] + dy_rot * R[:, 1, 1, None] * nonzero_sigx_sq[:, None]
+
+
+    dX = A0 * (-(x - x0[0]) ** 3) + np.sum(w * dx, axis=0)
+    dY = A0 * (-(y - x0[1]) ** 3) + np.sum(w * dy, axis=0)
+    derivs = np.stack((dX, dY), axis=0)
+
+    if return_potentials:
+        coefs = sign * (1-curl) * (sigx[:, None] ** 2) * (sigy[:, None]**2)
+        coefs_rot = (sign * curl) * (sigx[:, None] ** 2) * (sigy[:, None] ** 2)
+        pot = np.sum(w * coefs, axis=0) + A0 / 4 * ((x - x0[0]) ** 4 + (y - x0[1]) ** 4)
+        pot_rot = np.sum(w * coefs_rot, axis=0)
+
+        return derivs, pot, pot_rot
+
     return derivs
 
 class Landscape:
@@ -118,17 +159,21 @@ class Landscape:
         q_flat = q.reshape(2, -1)
         xs = np.array([m.x for m in self.module_list])[:, None]
         ys = np.array([m.y for m in self.module_list])[:, None]
-        sign = np.array([-1 if isinstance(m, (Node, NegCenter)) else +1 for m in self.module_list])[:, None]
-        curl = np.array([1 if isinstance(m, (Center, NegCenter)) else 0 for m in self.module_list])[:, None]
+        sign = np.array([-1 if isinstance(m, (AnisotropicNode, AnisotropicNegCenter)) else +1 for m in self.module_list])[:, None]
+        curl = np.array([1 if isinstance(m, (AnisotropicCenter, AnisotropicNegCenter)) else 0 for m in self.module_list])[:, None]
 
         Js = np.stack([m.J for m in self.module_list], axis=0)[:, None, :, :]
 
         pars = [m.get_current_pars(t, self.regime, *self.morphogen_times)[1:] for m in self.module_list]
-        sig_list, a_list = zip(*pars)
-        sig = np.stack([np.broadcast_to(np.asarray(s), (n_pts,)) for s in sig_list], axis=0)
-        a = np.stack([np.broadcast_to(np.asarray(amp), (n_pts,)) for amp in a_list], axis=0)
+        sigx_list, sigy_list, a_list, th_list = zip(*pars)
+        sigx = np.stack([sx for sx in sigx_list], axis=0)
+        sigy = np.stack([sy for sy in sigy_list], axis=0)
+        a = np.stack([amp for amp in a_list], axis=0)
+        th = np.stack([th for th in th_list], axis=0)
 
-        res = _flow(q_flat, xs, ys, sign, curl, sig, a, Js, self.A0, self.x0, return_potentials)
+
+        #res = _flow(q_flat, xs, ys, sign, curl, sig, a, Js, self.A0, self.x0, return_potentials)
+        res = _flow_aniso(q_flat, xs, ys, sign, curl, sigx, sigy, a, th, Js, self.A0, self.x0, return_potentials)
 
         if return_potentials:
             derivs, pot, pot_rot = res

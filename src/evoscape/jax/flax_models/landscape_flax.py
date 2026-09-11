@@ -5,10 +5,10 @@ from flax import nnx
 import jax.numpy as jnp
 import jax.random as jrd
 
-from ..converters import landscape_to_pytree, pytree_to_landscape
-from ..dynamics import _integrate
+from ..converters import landscape_to_pytree, pytree_to_landscape, landscape_to_pytree_aniso, pytree_to_landscape_aniso
+from ..dynamics import _integrate, _integrate_aniso
 from ..regimes import wrapped_regime
-from ..types import LandscapeDynamic, ModuleDynamic
+from ..types import LandscapeDynamic, ModuleDynamic, AnisotropicLandscapeDynamic, AnisotropicModuleDynamic
 
 
 # LandscapeDynamic and ModuleDynamic as flax classes
@@ -151,6 +151,161 @@ class LandscapeFlax(nnx.Module):
             cell_coordinates = trajectories[:, :, -1]
         
         return pytree_to_landscape(
+            self.dynamic,
+            self.static,
+            trajectories=trajectories,
+            cell_coordinates=cell_coordinates,
+            cell_states=cell_states,
+            fitness=fitness,
+            result=result,
+        )
+
+
+
+
+
+# LandscapeDynamic and ModuleDynamic as flax classes
+
+class AnisotropicModuleDynamicFlax(nnx.Module):
+
+    def __init__(self, module : AnisotropicModuleDynamic):
+
+        self.x = nnx.Param(module.x)
+        self.y = nnx.Param(module.y)
+
+        self.a = nnx.Param(module.a)
+        self.sx = nnx.Param(module.sx)
+        self.sy = nnx.Param(module.sy)
+        self.th = nnx.Param(module.th)
+
+
+class AnisotropicLandscapeDynamicFlax(nnx.Module):
+
+    def __init__(self, dynamic : AnisotropicLandscapeDynamic):
+        self.module = AnisotropicModuleDynamicFlax(dynamic.module)
+
+
+
+class AnisotropicLandscapeFlax(nnx.Module):
+
+    def __init__(self, landscape: Any, rngs : nnx.Rngs):
+
+        dynamic, static = landscape_to_pytree_aniso(landscape)
+
+        # ==========================================================
+        # TRAINABLE PARAMETERS
+        # ==========================================================
+
+        self.dynamic = AnisotropicLandscapeDynamicFlax(dynamic)
+
+        # ==========================================================
+        # CONFIGURATION STATIQUE
+        # ==========================================================
+
+        self.static = nnx.data(static) # cette ligne est tellement aberrante mdr
+
+        self.sim_params: Dict[str, Any] = nnx.static({})
+
+        self.get_cell_states = nnx.static(None)
+        self.signal_param = nnx.data(None)
+        self.regime = nnx.data(None)
+
+        self.rngs = rngs
+
+    # ==============================================================
+    # SETTERS
+    # ==============================================================
+
+    def set_regime_params(self, signal_param=None):
+        self.signal_param = nnx.data(signal_param)
+        self.regime = nnx.data(
+            wrapped_regime(
+                self.static,
+                self.signal_param
+            )
+        )
+
+    def set_simulation(
+        self,
+        init_noise,
+        t0,
+        tf,
+        nt,
+        ndt,
+        noise,
+    ):
+
+        self.sim_params = nnx.static(
+            dict(
+                init_noise=init_noise,
+                t0=t0,
+                tf=tf,
+                nt=nt,
+                ndt=ndt,
+                noise=noise,
+            )
+        )
+
+    def set_state_probs(self, get_cell_states):
+        self.get_cell_states = nnx.static(get_cell_states)
+
+    # ==============================================================
+    # FORWARD
+    # ==============================================================
+
+    def __call__(self, q_init):
+        """
+        q_init : array (2,n)
+        """
+
+        key = self.rngs.default()
+
+        p = self.sim_params
+
+        # adding noise to the initial condition
+        q_noisy = q_init + jrd.normal(self.rngs.default(), shape=q_init.shape) * p["init_noise"]
+
+        _, traj, states = _integrate_aniso(
+            key,
+            q_noisy,
+            p["t0"],
+            p["tf"],
+            p["nt"],
+            p["ndt"],
+            p["noise"],
+            self.dynamic,
+            self.static,
+            self.regime,
+            self.get_cell_states,
+        )
+
+        return traj, states
+
+    # ==============================================================
+    # GET LANDSCAPE
+    # ==============================================================
+    
+    def get_landscape_aniso(self, q_init = None):
+        """
+        LandscapeFlax is implemented to be in the spirit of a nnx.Module : it takes data (the
+        initial cell positions) and outputs data (their trajectories). That's why I made it so
+        the object doesn't contain the trajectories of the cells, unlike in the original landscape.
+
+        So in order to convert the nnx.Module to the original landscape, we compute trajectories here
+        before giving it to the object if the user specify a q_init
+        
+        """
+        trajectories = None
+        cell_coordinates = None
+        cell_states = None
+        result = None # this one stays None : landscape_flax has no notion of result
+        fitness = None # this one stays None : landscape_flax has no notion of fitness
+
+        if q_init is not None:
+            trajectories, cell_states = self(q_init)
+            cell_coordinates = trajectories[:, :, -1]
+        
+        return pytree_to_landscape_aniso(
             self.dynamic,
             self.static,
             trajectories=trajectories,

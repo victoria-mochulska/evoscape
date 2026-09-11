@@ -280,7 +280,7 @@ def JAXflow(X, Y, params):
 
 
 # Function for initializing random initial parameters
-def random_init2(key, N, X, Y, max, min):
+def random_init2(key, N, X, Y, min, max):
     """Randomly initialized parameters for a number of gaussians.
 
     `x0s` and `y0s` are uniformly sampled between extremum of meshgrid.
@@ -306,8 +306,8 @@ def random_init2(key, N, X, Y, max, min):
     subkeys = jax.random.split(key, 6)
 
     # spatial domain
-    x_min, x_max = jnp.min(X), jnp.max(X)
-    y_min, y_max = jnp.min(Y), jnp.max(Y)
+    x_min, x_max = X
+    y_min, y_max = Y
 
     # random initialization of gaussians (x0, y0)
     x0s = jax.random.uniform(subkeys[0], shape=(N,), minval=x_min, maxval=x_max)
@@ -318,8 +318,8 @@ def random_init2(key, N, X, Y, max, min):
     amps = jax.random.uniform(subkeys[2], shape=(N,), minval=min, maxval=max)
 
     # initialization of size
-    size1 = jax.random.uniform(subkeys[3], shape=(N,), minval=0.001, maxval = 5)
-    size2 = jax.random.uniform(subkeys[4], shape=(N,), minval=0.001, maxval = 5)
+    size1 = jax.random.uniform(subkeys[3], shape=(N,), minval=0.001, maxval = 1.5)
+    size2 = jax.random.uniform(subkeys[4], shape=(N,), minval=0.001, maxval = 1.5)
 
     # initialization of rotation
     theta = jax.random.uniform(subkeys[5], shape=(N,), minval=0, maxval = 2*jnp.pi)

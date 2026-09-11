@@ -10,7 +10,7 @@ class MLP(nnx.Module):
         layers_encoder = [] 
         for in_dim, out_dim in zip(dims[:-1], dims[1:]):
             layers_encoder.append(nnx.Linear(in_dim, out_dim, rngs=self.rngs))
-            layers_encoder.append(nnx.relu) 
+            layers_encoder.append(nnx.sigmoid) ### Relu before
         layers_encoder.pop() # last layer must be only linear, not linear + relu 
         
         self.net = nnx.Sequential(*layers_encoder)
