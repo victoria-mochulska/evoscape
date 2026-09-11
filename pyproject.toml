@@ -21,6 +21,7 @@ ott-jax = "^0.6.0"
 scikit-learn = "^1.9.0"
 python-pptx = "^1.0.2"
 tqdm = "^4.70.0"
+diffrax = "^0.7.2"
 
 [tool.poetry.group.jax]
 optional = true
