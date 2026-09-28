@@ -4,9 +4,10 @@ import numpy as np
 from flax import nnx
 import jax.numpy as jnp
 import jax.random as jrd
+from diffrax import Dopri5, SaveAt, PIDController
 
 from ..converters import landscape_to_pytree, pytree_to_landscape, landscape_to_pytree_aniso, pytree_to_landscape_aniso
-from ..dynamics import _integrate, _integrate_aniso
+from ..dynamics import _integrate, _integrate_aniso, _integrate_aniso2
 from ..regimes import wrapped_regime
 from ..types import LandscapeDynamic, ModuleDynamic, AnisotropicLandscapeDynamic, AnisotropicModuleDynamic
 
@@ -212,6 +213,10 @@ class AnisotropicLandscapeFlax(nnx.Module):
 
         self.rngs = rngs
 
+        #self.solver = nnx.data(None)
+        #self.saveat = nnx.data(None)
+        #self.stepsize_controller = nnx.data(None)
+
     # ==============================================================
     # SETTERS
     # ==============================================================
@@ -249,6 +254,12 @@ class AnisotropicLandscapeFlax(nnx.Module):
     def set_state_probs(self, get_cell_states):
         self.get_cell_states = nnx.static(get_cell_states)
 
+    def set_solver_info(self, solver, saveat, stepsize_controller):
+        self.solver = nnx.data(solver)
+        self.saveat = nnx.data(saveat)
+        self.stepsize_controller = nnx.data(stepsize_controller)
+
+
     # ==============================================================
     # FORWARD
     # ==============================================================
@@ -264,8 +275,25 @@ class AnisotropicLandscapeFlax(nnx.Module):
 
         # adding noise to the initial condition
         q_noisy = q_init + jrd.normal(self.rngs.default(), shape=q_init.shape) * p["init_noise"]
+        """
+        _, traj, states = _integrate_aniso2(
+            key,
+            self.solver,
+            self.saveat,
+            self.stepsize_controller,
+            q_noisy,
+            p["t0"],
+            p["tf"],
+            p["nt"],
+            p["ndt"],
+            p["noise"],
+            self.dynamic,
+            self.static,
+            self.regime,
+            self.get_cell_states,
+        )"""
 
-        _, traj, states = _integrate_aniso(
+        _, traj, states = _integrate_aniso2(
             key,
             q_noisy,
             p["t0"],

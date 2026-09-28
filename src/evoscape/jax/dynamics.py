@@ -3,6 +3,7 @@ from functools import partial
 import jax.numpy as jnp
 import jax.lax as lax
 import jax.random as jrnd
+from diffrax import diffeqsolve, ODETerm, Dopri5, SaveAt, PIDController
 
 from jax import jit, vmap
 
@@ -184,6 +185,25 @@ def _integrate_aniso(key, y0, t0, tf, nt, ndt, noise, dynamic, static, regime, g
     states = jnp.concatenate([state0[None], states], axis=0).T
     return key_final, traj, states
 
+
+
+# Base integration function to work with
+# @partial(jit, static_argnames=("nt", "ndt", "get_states", "regime"))
+def _integrate_aniso2(key, y0, t0, tf, nt, ndt, noise, dynamic, static, regime, get_states):
+    dt = (tf - t0) / (nt - 1) / ndt
+    solver, saveat, stepsize_controller = Dopri5(), SaveAt(ts=jnp.linspace(t0, tf, nt)), PIDController(rtol=1e-5, atol=1e-5)
+    #vector_field = lambda t, y, args: _flow_aniso(y, dynamic.module.x, dynamic.module.y, sx, sy,a, th, static.module.J, static.A0, static.x0)
+    vector_field = lambda t, y, args: get_flow_aniso(t, y, dynamic, static, regime)
+
+    term = ODETerm(vector_field)
+
+    sol = diffeqsolve(term, solver, t0=t0, t1=tf, dt0=dt, y0=y0, saveat=saveat,
+                  stepsize_controller=stepsize_controller)
+
+    state0 = get_states(t0, y0, dynamic, static, regime)
+
+    traj = jnp.transpose(sol.ys, (1, 2, 0))
+    return key, traj, state0
 
 
 
