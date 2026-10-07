@@ -5,7 +5,7 @@ class MLP(nnx.Module):
     def __init__(self, dims, rngs):
 
         self.rngs = rngs
-        self.dims_encoder = dims
+        self.dims = dims
 
         layers_encoder = [] 
         for in_dim, out_dim in zip(dims[:-1], dims[1:]):
