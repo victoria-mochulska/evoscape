@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 import numpy as np
 from copy import copy
 
@@ -104,6 +105,7 @@ def visualize_landscape_aniso(landscape, xx, yy, regime, color_scheme='fp_types'
     density = 0.5
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
     circles = []
+    ellipses = []
     for i, module in enumerate(landscape.module_list):
         if module.__class__.__name__ == 'AnisotropicCenter' or module.__class__.__name__ == 'AnisotropicNegCenter':
             curl[i] = 1
@@ -114,10 +116,12 @@ def visualize_landscape_aniso(landscape, xx, yy, regime, color_scheme='fp_types'
                 sigx = module.sx.item()
                 sigy = module.sy.item()
                 A = module.a.item()
+                th = module.th.item()
             else:
                 sigx = module.sx[regime]
                 sigy = module.sy[regime]
                 A = module.a[regime]
+                th = module.th[regime]
 
             if color_scheme == 'fp_types':
                 color = fp_type_colors[module.__class__.__name__]
@@ -133,8 +137,10 @@ def visualize_landscape_aniso(landscape, xx, yy, regime, color_scheme='fp_types'
             else:
                 fill = True
                 lw = 0
-            circles.append(plt.Circle((module.x, module.y), 1.18 * sigx*sigy, color=color,
-                                      fill=fill, alpha=0.22 * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
+            #circles.append(plt.Circle((module.x, module.y), 1.18 * sigx*sigy, color=color,
+            #                          fill=fill, alpha=0.22 * np.sqrt(np.abs(A)), clip_on=True, linewidth=lw))
+            ellipses.append(Ellipse((module.x, module.y), np.sqrt(1.18)*sigx, np.sqrt(1.18)*sigy, angle=np.rad2deg(-th), color=color,
+                                      fill=fill, alpha=np.clip(0.22 * np.sqrt(np.abs(A)), 0.0, 1.0), clip_on=True, linewidth=lw))
     morphogen_times = landscape.morphogen_times
     landscape.morphogen_times = np.arange(landscape.n_regimes) + 0.5
     (dX, dY), potential, rot_potential = landscape(float(regime), (xx, yy), return_potentials=True)
@@ -143,8 +149,8 @@ def visualize_landscape_aniso(landscape, xx, yy, regime, color_scheme='fp_types'
     circles_ax = stream_ax
     if draw_circles:
         for i in range(len(landscape.module_list)):
-            circles_ax.add_patch(copy(circles[i]))
-
+            #circles_ax.add_patch(copy(circles[i]))
+            circles_ax.add_patch(copy(ellipses[i]))
     stream_ax.streamplot(xx, yy, dX, dY, density=density, arrowsize=2., arrowstyle='->', linewidth=1,
                          color='grey')
     stream_ax.contour(xx, yy, dX, (0,), colors=('k',), linestyles='-', linewidths=1.5, alpha=0.7)
@@ -152,8 +158,8 @@ def visualize_landscape_aniso(landscape, xx, yy, regime, color_scheme='fp_types'
 
     stream_ax.set_xlim([np.min(xx), np.max(xx)])
     stream_ax.set_ylim([np.min(yy), np.max(yy)])
-    stream_ax.set_xticks([])
-    stream_ax.set_yticks([])
+    #stream_ax.set_xticks([])
+    #stream_ax.set_yticks([])
     landscape.morphogen_times = morphogen_times
     # plt.show()
     return fig
@@ -347,7 +353,7 @@ def visualize_potential(landscape, xx, yy, regime=None, t=None, color_scheme='fp
 
 
 def visualize_potential_aniso(landscape, xx, yy, regime=None, t=None, color_scheme='fp_types', elev=None, azim=None, offset=2,
-                        cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True):
+                        cmap_center=None, rot=False, rot_contour=False, min_contour_segment=80, scatter=False, zlim=None, axes=True, grid=True, zoom=False):
     curl = np.zeros((len(landscape.module_list)), dtype='bool')
     # circles = []
     fig, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"}, figsize=(6, 6))
@@ -367,8 +373,14 @@ def visualize_potential_aniso(landscape, xx, yy, regime=None, t=None, color_sche
         cmap = scm.cork.reversed()
 
     if zlim is None:
-        ax.set_zlim([np.min(potential) - offset, np.max(potential) + 2])
-        zlow = np.min(potential) - offset
+        """ax.set_zlim([np.min(potential) - offset, np.max(potential) + 2])
+        zlow = np.min(potential) - offset"""
+        if zoom:
+            ax.set_zlim([np.min(potential)*1.5, np.max(potential)*1.5])
+            zlow = np.min(potential)*1.5
+        else:
+            ax.set_zlim([np.min(potential) - 1, np.max(potential)*1.5])
+            zlow = np.min(potential) - 1
     else:
         ax.set_zlim(zlim)
         zlow = zlim[0]
@@ -407,7 +419,7 @@ def visualize_potential_aniso(landscape, xx, yy, regime=None, t=None, color_sche
 
     if scatter:
         for i, module in enumerate(landscape.module_list):
-            if module.__class__.__name__ == 'Center' or module.__class__.__name__ == 'NegCenter':
+            if module.__class__.__name__ == 'AnisotropicCenter' or module.__class__.__name__ == 'AnisotropicNegCenter':
                 curl[i] = 1
             if color_scheme == 'fp_types':
                 color = fp_type_colors[module.__class__.__name__]
@@ -420,15 +432,30 @@ def visualize_potential_aniso(landscape, xx, yy, regime=None, t=None, color_sche
     if regime is not None:
         landscape.morphogen_times = morphogen_times
 
-    ax.set_xticks([])
-    ax.set_yticks([])
+    """#ax.set_xticks([])
+    #ax.set_yticks([])
     ax.zaxis.set_tick_params(color='white')
-    ax.set_zticklabels([])
+    ax.set_zticklabels([])"""
     ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
     ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
     ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
 
-    # plt.tight_layout()
+    # Enlever les grilles X et Y
+    ax.xaxis._axinfo["grid"]["linewidth"] = 0
+    ax.yaxis._axinfo["grid"]["linewidth"] = 0
+
+    # Garder la grille/lignes de Z
+    ax.zaxis._axinfo["grid"]["linewidth"] = 1
+
+    # Garder les couleurs des ticks
+    ax.tick_params(axis='x', colors='black')
+    ax.tick_params(axis='y', colors='black')
+    ax.tick_params(axis='z', colors='black')
+
+    if not grid:
+        ax.grid(False)
+
+    plt.tight_layout(pad=3)
     if not axes:
         ax.set_axis_off()
     # plt.show()
