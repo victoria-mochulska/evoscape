@@ -126,3 +126,59 @@ def run_optimization_decoder(dynamic, decoder, key, steps, loss_fn, opt_dynamic,
             print(f"Train step {step} : Loss = {loss}")
         
     return dynamic_vals, fitness_vals
+
+
+def make_optimizer(
+    model,
+    learning_rate=1e-3,
+    train_encoder=True,
+    train_landscape=True,
+    train_decoder=True,
+):
+
+    filters = []
+
+    if train_encoder:
+        filters.append(nnx.PathContains("encoder"))
+
+    if train_landscape:
+        filters.append(nnx.PathContains("landscape_flax"))
+
+    if train_decoder:
+        filters.append(nnx.PathContains("decoder"))
+
+    if len(filters) == 0:
+        raise ValueError("At least one part of the model must be trainable.")
+
+    train_filter = nnx.Any(*filters)
+
+    return nnx.Optimizer(
+        model,
+        optax.adamw(learning_rate),
+        wrt=train_filter,
+    )
+
+
+def make_wrt(
+    train_encoder=True,
+    train_landscape=True,
+    train_decoder=True,
+):
+
+    filters = []
+
+    if train_encoder:
+        filters.append(nnx.PathContains("encoder"))
+
+    if train_landscape:
+        filters.append(nnx.PathContains("landscape_flax"))
+
+    if train_decoder:
+        filters.append(nnx.PathContains("decoder"))
+
+    if len(filters) == 0:
+        raise ValueError("At least one part of the model must be trainable.")
+
+    train_filter = nnx.Any(*filters)
+
+    return train_filter
