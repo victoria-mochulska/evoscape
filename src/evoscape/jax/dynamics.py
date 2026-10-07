@@ -198,7 +198,7 @@ def _integrate_aniso2(key, y0, t0, tf, nt, ndt, noise, dynamic, static, regime, 
     term = ODETerm(vector_field)
 
     sol = diffeqsolve(term, solver, t0=t0, t1=tf, dt0=dt, y0=y0, saveat=saveat,
-                  stepsize_controller=stepsize_controller)
+                  stepsize_controller=stepsize_controller, max_steps=16384, throw=False)
 
     state0 = get_states(t0, y0, dynamic, static, regime)
 
