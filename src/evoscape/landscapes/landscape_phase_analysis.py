@@ -466,7 +466,7 @@ class LandscapePhaseAnalysisBase:
         if mean_radius < fp_tol * 2.0 or max(mean_radius, radius_span) < fp_tol:
             return None
 
-        max_lag = min(traj.shape[0] - 8, 512)
+        max_lag = traj.shape[0] - 8
         if max_lag < 8:
             return None
 

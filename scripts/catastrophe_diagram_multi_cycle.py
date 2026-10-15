@@ -5,15 +5,15 @@ import os
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[1]
-os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".mpl-cache"))
-os.environ.setdefault("MPLBACKEND", "Agg")
-Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
-sys.path.insert(0, str(ROOT / "src"))
+ROOT = Path(__file__).resolve().parent
+# os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".mpl-cache"))
+# os.environ.setdefault("MPLBACKEND", "Agg")
+# Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
+# sys.path.insert(0, str(ROOT / "src"))
 
-import matplotlib
+# import matplotlib
 
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,21 +25,26 @@ from evoscape.landscapes import Landscape
 from evoscape.modules import Center, Node, UnstableNode
 from evoscape.morphogen_regimes import mr_const
 
+import inspect
+
 
 plt.style.use("default")
 plt.rcParams.update({"figure.dpi": 200})
 
-save_dir = ROOT / "figures" / "catastrophe_diagram_multi_flip_sig"
+save_dir = ROOT / "figures" / "catastrophe_diagram_choice_wide_1"
 
-N_PROCESSES = 8
+N_PROCESSES = 200
 
-n_grid_points = 21
+n_grid_points = 101
 
-s_range = (0.1, 0.5)
-sig = np.sqrt(s_range[0] * s_range[1])
+min_region_size = 10
+
+# s_range = (0.1, 0.5)
+# sig = np.sqrt(s_range[0] * s_range[1])
 
 
 # def update_landscape(p1, p2):
+#     #
 #     s_head = sig * np.exp(p2 / 2)
 #     s_fate = sig * np.exp(-p2 / 2)
 #     s_left = s_fate * np.exp(-p1 / 2)
@@ -56,30 +61,7 @@ sig = np.sqrt(s_range[0] * s_range[1])
 #     return Landscape(modules, A0=0.05, regime=mr_const, n_regimes=1)
 
 
-# def update_landscape(p1, p2):
-#     amp = 4.
-#     a_head = amp*np.exp(-p2/2)
-#     a_fate = 1.5*amp*np.exp(p2/2)
-#     a_left = a_fate*np.exp(-p1/2)
-#     a_right = a_fate*np.exp(p1/2)
-#
-#     # print(a_head, a_left, a_right)
-#
-#     s_fate = 0.75 #0.75
-#     x_fate = 1.5 #1.1
-#     # y of cycle was 0.8
-#     modules = [
-#         Node(x=-0.0, y=0.5, a=4., s=0.8),
-#
-#         Node(x=-x_fate, y=-1., a=a_left, s=s_fate+0.01),
-#         Node(x=+x_fate, y=-1., a=a_right, s=s_fate),
-#
-#         UnstableNode(x=0.0, y=0.5, a=a_head*4, s=0.4),
-#         Center(x=0, y=0.5, a=4., s=0.7),
-#     ]
-#     return Landscape(modules, A0=0.05, x0=(0., -0.8), regime=mr_const, n_regimes=1)
-
-
+# umbilic
 # def update_landscape(p1, p2):
 #     sig=0.5
 #     s_head = sig * np.exp(+p2 / 2)
@@ -89,18 +71,26 @@ sig = np.sqrt(s_range[0] * s_range[1])
 #
 #     x_fate = 1.0 #1.1, 1.5
 #     y_cycle = 0.5 # 0.5
+#     x_cycle = -0.2
 #     modules = [
-#         Node(x=-0.0, y=y_cycle, a=4., s=s_head),
+#         Node(x=x_cycle, y=y_cycle, a=4., s=s_head),
 #
 #         Node(x=-x_fate, y=-1., a=4.5, s=s_left+0.01),
 #         # a was 3
 #         Node(x=+x_fate, y=-1., a=4.5, s=s_right),
 #
-#         # UnstableNode(x=0.0, y=y_cycle, a=6., s=s_head*0.8),
-#         # Center(x=0, y=y_cycle, a=4., s=s_head*0.85),
+#         # Node(x=-0.2, y=-0.8, a=1., s=1.5*0.5),
+#         # Node(x=0, y=-1, a=1., s=1.5 * s_fate),
+#
+#         UnstableNode(x=x_cycle, y=y_cycle, a=6., s=s_head*0.8),
+#         Center(x=x_cycle, y=y_cycle, a=4., s=s_head*0.85),
 #     ]
 #     return Landscape(modules, A0=0.05, x0=(0., -0.8), regime=mr_const, n_regimes=1)
 
+
+# Binary choice / double homoclinic / double SNIC with small x_fate
+
+# choice_snic_6
 
 def update_landscape(p1, p2):
     sig=0.5
@@ -119,24 +109,145 @@ def update_landscape(p1, p2):
     ]
     return Landscape(modules, A0=0.05, x0=(0., 0.), regime=mr_const, n_regimes=1)
 
+# pitchfork
+# def update_landscape(p1, p2):
+#     sig=0.5 # 0.6
+#     s_head = sig * np.exp(+p2 / 2)
+#     s_fate = sig * np.exp(-p2 / 2)
+#     # 15 - s left right do not depend on p2
+#     s_left = sig * np.exp(-p1 / 2)
+#     s_right = sig * np.exp(p1 / 2)
+#
+#     x_fate = 0.8 * np.exp(-p2/2)  # was 1 *
+#     y_cycle = 0.8
+#     y_fate = -1.
+#     modules = [
+#         Node(x=-0.0, y=y_cycle, a=4., s=s_head), # a = 5 # no M1 and M4 for pitchfork
+#         Node(x=-x_fate, y=y_fate, a=4.05, s=s_left),
+#         Node(x=+x_fate, y=y_fate, a=4., s=s_right), # a = 5
+#         Node(x=0.0, y=y_fate, a=1., s=1.5*s_fate), # s = 1.5*, a = 2
+#     ]
+#     return Landscape(modules, A0=0.05, x0=(0., -1.), regime=mr_const, n_regimes=1)
+
+
+# simple flip
+# def update_landscape(p1, p2):
+#     sig=0.5
+#     s_head = sig * np.exp(+p2 / 2)
+#     s_fate = sig * np.exp(-p2 / 2)
+#     s_left = sig * np.exp(-p1 / 2 - p2 / 2)
+#     s_right = sig * np.exp(p1 / 2 - p2 / 2)
+#
+#     x_fate = 0.5
+#     y_cycle = 0.8
+#     y_fate = -1.
+#     modules = [
+#         Node(x=-0.0, y=y_cycle, a=4., s=s_head), # a = 4
+#
+#         Node(x=-x_fate, y=y_fate, a=4.05, s=s_left),
+#         Node(x=+x_fate, y=y_fate, a=4., s=s_right), # a = 5
+#
+#         Node(x=0.0, y=y_fate, a=1., s=1.5*s_fate),
+#     ]
+#     return Landscape(modules, A0=0.05, x0=(0., -1.), regime=mr_const, n_regimes=1)
+
+
+# flip with homoclinic
+# def update_landscape(p1, p2):
+#     sig=0.6
+#     s_head = sig* np.exp(+p2 / 2)
+#     s_fate = sig * np.exp(-p2 / 2)
+#     s_left = sig * np.exp(-p1 / 2 + p2 / 2)
+#     s_right = sig * np.exp(p1 / 2 + p2 / 2)
+#
+#     x_fate = 0.8
+#     y_cycle = 0.8
+#     y_fate = -1.
+#     modules = [
+#         Node(x=-0.0, y=y_cycle, a=9., s=s_head), # a = 4
+#
+#         Node(x=-x_fate, y=y_fate, a=4.05, s=s_left),
+#         Node(x=+x_fate, y=y_fate, a=4., s=s_right), # a = 5
+#
+#         Node(x=0.0, y=y_fate, a=1., s=1.5*0.5),
+#
+#         UnstableNode(x=0.0, y=y_cycle, a=12., s=0.8*s_head),
+#         Center(x=0.0, y=y_cycle, a=4., s=0.85*s_head),
+#     ]
+#     return Landscape(modules, A0=0.05, x0=(0., -1.), regime=mr_const, n_regimes=1)
+
+
+
+# def update_landscape(p1, p2):
+#     # flip with mixed fate increase (up)
+#     sig=0.5
+#     s_head = sig* np.exp(+p2 / 2)
+#     s_fate = sig * np.exp(+p2 / 2) # mixed fate
+#     s_left = sig * np.exp(-p1 / 2 - p2/2)
+#     s_right = sig * np.exp(p1 / 2 - p2/2)
+#
+#     x_fate = 1.
+#
+#     y_cycle = 0.7
+#
+#     y_fate = -1.
+#     modules = [
+#         Node(x=-0.0, y=y_cycle, a=4., s=s_head), # a = 4
+#
+#         Node(x=-x_fate, y=y_fate, a=7.05, s=s_left),
+#         Node(x=+x_fate, y=y_fate, a=7., s=s_right), # a = 5
+#
+#         Node(x=0.0, y=y_fate, a=1., s=1.5*s_fate),
+#
+#         # UnstableNode(x=0.0, y=y_cycle, a=12., s=0.8*s_head),
+#         # Center(x=0.0, y=y_cycle, a=4., s=0.85*s_head),
+#     ]
+#     return Landscape(modules, A0=0.05, x0=(0., -1.), regime=mr_const, n_regimes=1)
+
+
+# ________________________________________________________________________________
+# ________________________________________________________________________________
+
 
 def unstable_connection_signature(catastrophe_info):
-    return tuple(
-        sorted(
-            (
-                int(connection["connection"][0]),
-                int(connection["connection"][1]),
-                str(connection["target_type"]),
-            )
-            for connection in catastrophe_info["unstable_connections"]
+    connections_by_saddle = {}
+    for connection in catastrophe_info["unstable_connections"]:
+        saddle, target = map(int, connection["connection"])
+        connections_by_saddle.setdefault(saddle, []).append(
+            (target, str(connection["target_type"]))
         )
-    )
+    return tuple(sorted(tuple(sorted(targets)) for targets in connections_by_saddle.values()))
 
 
 def signature_label(signature):
     if not signature:
         return "no unstable manifolds"
-    return "; ".join(f"{src}->{dst} ({target_type})" for src, dst, target_type in signature)
+    return "; ".join(
+        f"{tuple(target for target, _ in connection)} "
+        f"({', '.join(target_type for _, target_type in connection)})"
+        for connection in signature
+    )
+
+
+def n_attractors(catastrophe_info):
+    return sum(obj["type"] in {"attractor", "cycle"} for obj in catastrophe_info["objects"])
+
+def n_saddles(catastrophe_info):
+    return sum(obj["type"] == "saddle" for obj in catastrophe_info["objects"])
+
+def is_bistable(catastrophe_info):
+    objects = catastrophe_info["objects"]
+    return (
+        int(catastrophe_info["n_cycles"]) == 0
+        and sum(obj["type"] == "attractor" for obj in objects) == 2
+        and sum(obj["type"] == "saddle" for obj in objects) == 1
+    )
+
+def is_monostable_boundary(first_info, second_info):
+    return (
+        n_attractors(first_info) == n_attractors(second_info) == 1
+        and n_saddles(first_info) == n_saddles(second_info)
+    )
 
 
 def mix_with_white(color, amount):
@@ -183,6 +294,7 @@ def continuous_region_components(region_id_grid):
 order_colors = [
     "tab:green",
     "tab:blue",
+    "indianred",
     "tab:purple",
     "gold",
 ]
@@ -251,6 +363,9 @@ def main():
     save_dir.mkdir(parents=True, exist_ok=True)
     print(f"n_processes={N_PROCESSES}")
 
+    with open(save_dir / "landscape_setup.txt", "w") as f:
+        f.write(inspect.getsource(update_landscape))
+
     p1 = np.linspace(-1, 1, n_grid_points)
     p2 = np.linspace(-1, 1, n_grid_points)
     # q = np.linspace(-1.5, 1.5, 101)
@@ -282,18 +397,24 @@ def main():
     print("Unique fixed-point counts:", np.unique(n_fp_grid).tolist())
     print("Unique cycle counts:", np.unique(n_c_grid).tolist())
 
-    base_keys = sorted(
+    color_keys = sorted(
         {
-            (int(n_fp_grid[row_index, col_index]), int(n_c_grid[row_index, col_index]))
+            n_attractors(catastrophe_info_grid[row_index, col_index])
             for row_index in range(len(p2))
             for col_index in range(len(p1))
         }
     )
+    print("Unique attractor counts:", color_keys)
 
+    region_colors = {
+        1: to_rgb("#F2F6EC"),  # pale green
+        2: to_rgb("#E2ECF1"),  # light blue
+        3: to_rgb("#E4DBEC"),  # lavender
+    }
     base_cmap = plt.get_cmap("tab10")
     base_colors = {
-        key: base_cmap(idx % base_cmap.N)[:3]
-        for idx, key in enumerate(base_keys)
+        key: region_colors.get(key, base_cmap(idx % base_cmap.N)[:3])
+        for idx, key in enumerate(color_keys)
     }
 
     region_indices = {}
@@ -315,21 +436,14 @@ def main():
     region_summary = []
     rgba_grid = np.zeros((len(p2), len(p1), 4), dtype=float)
 
-    for n_fp, n_c in base_keys:
+    for n_fp, n_c in sorted({key[:2] for key in region_indices}):
         signatures = sorted(
-            {
-                signature
-                for (fp_value, cycle_value, signature) in region_indices
-                if fp_value == n_fp and cycle_value == n_c
-            },
-            key=str,
+            signature
+            for fp_value, cycle_value, signature in region_indices
+            if (fp_value, cycle_value) == (n_fp, n_c)
         )
-        shade_amounts = np.array([0.0]) if len(signatures) == 1 else np.linspace(0.0, 0.8, len(signatures))
-
-        for signature_index, (signature, shade_amount) in enumerate(zip(signatures, shade_amounts)):
+        for signature_index, signature in enumerate(signatures):
             key = (int(n_fp), int(n_c), signature)
-            # Previous shading mode:
-            # shaded_color = mix_with_white(base_colors[(int(n_fp), int(n_c))], float(shade_amount))
             region_summary.append(
                 {
                     "n_fp": int(n_fp),
@@ -344,12 +458,7 @@ def main():
     for row_index in range(len(p2)):
         for col_index in range(len(p1)):
             catastrophe_info = catastrophe_info_grid[row_index, col_index]
-            key = (
-                int(catastrophe_info["n_fp"]),
-                int(catastrophe_info["n_cycles"]),
-                unstable_connection_signature(catastrophe_info),
-            )
-            rgba_grid[row_index, col_index, :3] = base_colors[key[:2]]
+            rgba_grid[row_index, col_index, :3] = base_colors[n_attractors(catastrophe_info)]
             rgba_grid[row_index, col_index, 3] = 1.0
 
     for entry in sorted(region_summary, key=lambda item: (item["n_fp"], item["n_c"], str(item["signature"]))):
@@ -367,6 +476,7 @@ def main():
         key = region_id_to_key[int(component["region_id"])]
         n_fp, n_c, signature = key
         indices = component["indices"]
+
         coords = np.array([[p1[col_index], p2[row_index]] for row_index, col_index in indices], dtype=float)
         centroid = coords.mean(axis=0)
         sample_offset = int(np.argmin(np.sum((coords - centroid) ** 2, axis=1)))
@@ -383,6 +493,7 @@ def main():
                 "p2": float(sample_p2),
                 "n_cells": int(len(indices)),
                 "component_id": int(continuous_region_labels[sample_row, sample_col]),
+                "plot_thumbnail": len(indices) > min_region_size,
             }
         )
 
@@ -414,18 +525,44 @@ def main():
             phase_result=sample_phase_result,
             show_cycles=True,
             show_saddle_manifolds=True,
+            plot_stable_manifolds=True,
+            basin_coloring="node",
+            module_order_colors=order_colors,
         )
         sample_skeleton_ax.set_title(
             f"Phase skeleton\nn_fp={n_fp}, n_c={n_c}\n{signature_label(signature)}\np1={sample_p1:.2f}, p2={sample_p2:.2f}"
         )
-        landscape_path = save_dir / f"sample_{sample_index:02d}_landscape.png"
-        skeleton_path = save_dir / f"sample_{sample_index:02d}_skeleton.png"
+        sample_thumbnail_fig, sample_thumbnail_ax, _ = vis.plot_phase_skeleton_t(
+            sample_landscape,
+            xx,
+            yy,
+            0.0,
+            phase_result=sample_phase_result,
+            show_cycles=True,
+            show_saddle_manifolds=True,
+            plot_stable_manifolds=False,
+            basin_coloring="node",
+            module_order_colors=order_colors,
+        )
+        sample_thumbnail_fig.set_size_inches(4, 4)
+        sample_thumbnail_fig.patch.set_alpha(0.0)
+        sample_thumbnail_ax.set_facecolor((1, 1, 1, 0))
+        sample_thumbnail_ax.set_xticks([])
+        sample_thumbnail_ax.set_yticks([])
+        for spine in sample_thumbnail_ax.spines.values():
+            spine.set_visible(False)
+        landscape_path = save_dir / f"sample_{sample_index:02d}_landscape.svg"
+        skeleton_path = save_dir / f"sample_{sample_index:02d}_skeleton.svg"
+        thumbnail_path = save_dir / f"sample_{sample_index:02d}_thumbnail.svg"
         sample_landscape_fig.savefig(landscape_path, bbox_inches="tight")
         sample_skeleton_fig.savefig(skeleton_path, bbox_inches="tight")
+        sample_thumbnail_fig.savefig(thumbnail_path, bbox_inches="tight", transparent=True)
         plt.close(sample_landscape_fig)
         plt.close(sample_skeleton_fig)
+        plt.close(sample_thumbnail_fig)
         print(f"Saved {landscape_path}")
         print(f"Saved {skeleton_path}")
+        print(f"Saved {thumbnail_path}")
 
     dp1 = p1[1] - p1[0]
     dp2 = p2[1] - p2[0]
@@ -438,9 +575,11 @@ def main():
 
     fig = plt.figure(figsize=(9, 9))
     ax = plt.gca()
-    ax.imshow(rgba_grid, origin="lower", extent=extent, interpolation="nearest", aspect="equal", alpha=0.2)
-    ax.set_xlabel("p1")
-    ax.set_ylabel("p2")
+    ax.imshow(rgba_grid, origin="lower", extent=extent, interpolation="nearest", aspect="equal")  # alpha=0.2
+    # ax.set_xlabel("p1")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    # ax.set_ylabel("p2")
 
     x_edges = np.linspace(extent[0], extent[1], len(p1) + 1)
     y_edges = np.linspace(extent[2], extent[3], len(p2) + 1)
@@ -449,16 +588,30 @@ def main():
         for col_index in range(len(p1) - 1):
             if region_id_grid[row_index, col_index] == region_id_grid[row_index, col_index + 1]:
                 continue
+            left_info = catastrophe_info_grid[row_index, col_index]
+            right_info = catastrophe_info_grid[row_index, col_index + 1]
+            if (
+                (is_bistable(left_info) and is_bistable(right_info))
+                or is_monostable_boundary(left_info, right_info)
+            ):
+                continue
             ax.plot(
                 [x_edges[col_index + 1], x_edges[col_index + 1]],
                 [y_edges[row_index], y_edges[row_index + 1]],
                 color=border_color,
-                linewidth=0.8,
+                linewidth=1.5,
                 zorder=3,
             )
     for row_index in range(len(p2) - 1):
         for col_index in range(len(p1)):
             if region_id_grid[row_index, col_index] == region_id_grid[row_index + 1, col_index]:
+                continue
+            lower_info = catastrophe_info_grid[row_index, col_index]
+            upper_info = catastrophe_info_grid[row_index + 1, col_index]
+            if (
+                (is_bistable(lower_info) and is_bistable(upper_info))
+                or is_monostable_boundary(lower_info, upper_info)
+            ):
                 continue
             ax.plot(
                 [x_edges[col_index], x_edges[col_index + 1]],
@@ -468,12 +621,18 @@ def main():
                 zorder=3,
             )
 
+    diagram_0_path = save_dir / "catastrophe_diagram_multi_cycle_no_thumbnails.png"
+    fig.savefig(diagram_0_path, bbox_inches="tight", dpi=200)
+    print(f"Saved {diagram_0_path}")
+
     thumb_size = 0.15
     thumb_pad = 0.0
     x0, x1, y0, y1 = extent
     thumb_cache = {}
 
-    for sample in sampled_regions[:]:
+    for sample in sampled_regions:
+        if not sample["plot_thumbnail"]:
+            continue
         key = (sample["p1"], sample["p2"])
         if key not in thumb_cache:
             thumb_cache[key] = render_skeleton_thumb(*key, xx, yy)
@@ -493,13 +652,13 @@ def main():
             spine.set_visible(False)
 
     legend_handles = [
-        Patch(facecolor=base_colors[key], edgecolor="none", label=f"n_fp = {key[0]}, n_c = {key[1]}")
-        for key in base_keys
+        Patch(facecolor=base_colors[key], edgecolor="none", label=f"n_attractors = {key}")
+        for key in color_keys
     ]
     # plt.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.02, 1.0))
     ax.set_aspect('equal')
 
-    diagram_path = save_dir / "catastrophe_diagram_multi_cycle.png"
+    diagram_path = save_dir / "catastrophe_diagram_multi_cycle_with_thumbnails.png"
     fig.savefig(diagram_path, bbox_inches="tight", dpi=200)
     plt.close(fig)
     print(f"Saved {diagram_path}")

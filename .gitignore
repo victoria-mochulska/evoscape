@@ -23,3 +23,5 @@ dist/
 src/saved_files/
 src/evoscape/landscapes/other/
 /.mpl-cache/fontlist-v390.json
+/figures/
+exports/

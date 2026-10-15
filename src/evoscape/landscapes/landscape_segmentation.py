@@ -6,9 +6,9 @@ from . import Landscape
 class Somitogenesis_Landscape(Landscape):
     # fitness_pars: time_pars, init_state, ncells, t0_shift, noise, high_value, low_value, t_stable, penalty_weight
 
-    def get_kymo(self, ncells, time_pars, init_state, t0_shift=1., noise=0., ndt=100):
+    def get_kymo(self, ncells, time_pars, init_state, t0_shift=1., noise=0., ndt=100, t0=0.):
         # kymo = np.zeros((ncells, time_pars[2]))
-        self.morphogen_times = (t0_shift * np.arange(ncells), )
+        self.morphogen_times = (t0 + t0_shift * np.arange(ncells), )
         self.init_cells(ncells, init_state, noise=noise)
         traj, states = self.run_cells(*time_pars, noise, ndt=ndt, get_states=False)
 
@@ -29,7 +29,11 @@ class Somitogenesis_Landscape(Landscape):
         ncells = fitness_pars['ncells']
         noise = fitness_pars['noise']
         ndt = fitness_pars['ndt']
-        kymo = self.get_kymo(ncells, time_pars, fitness_pars['init_state'], fitness_pars['t0_shift'], noise, ndt)
+        if 't0' in fitness_pars:
+            t0 = fitness_pars['t0']
+        else:
+            t0 = 0.
+        kymo = self.get_kymo(ncells, time_pars, fitness_pars['init_state'], fitness_pars['t0_shift'], noise, ndt, t0)
         high = (kymo[:, -1] - fitness_pars['high_value'] > 0.).astype(int)
         low = (kymo[:, -1] - fitness_pars['low_value'] < 0.).astype(int)
         cross_high = np.where(high[1:-1] * (high[2:] - high[:-2]) != 0)[0] + 1
