@@ -13,12 +13,13 @@ import json
 from pathlib import Path
 import orbax.checkpoint as ocp
 import pickle
-
+import logging
 
 from evoscape.landscapes import Landscape
 from evoscape.modules import Node, UnstableNode, Center, NegCenter, AnisotropicNode, AnisotropicUnstableNode, AnisotropicCenter, AnisotropicNegCenter
 from evoscape.jax.regimes import mr_const, mr_sigmoid, mr_const_aniso
 from evoscape.jax.dynamics import state_probs, state_probs_aniso
+from evoscape.jax.converters import landscape_to_params
 from evoscape.jax.nath_utils import *
 from evoscape.jax.flax_models.landscape_flax import LandscapeFlax, AnisotropicLandscapeFlax
 from evoscape.jax.flax_models.autoencoder_flax import AutoEncoder
@@ -259,7 +260,7 @@ def compare_trajectories(traj_sim, traj_real, gene_names=None, title=None):
     plt.show()
 
 
-
+"""
 def plot_colored_trajectories(
     traj_2d,
     traj_4d,
@@ -271,6 +272,7 @@ def plot_colored_trajectories(
     figsize=(12, 12),
 ):
     """
+"""
     Affiche les trajectoires 2D colorées par chacune des 4 coordonnées
     du tableau décodé.
 
@@ -279,6 +281,7 @@ def plot_colored_trajectories(
     traj_2d : ndarray, shape (2, N, T)
     traj_4d : ndarray, shape (4, N, T)
     """
+"""
 
     gene_names = ["Gt", "Kni", "Hb", "Kr"]
 
@@ -357,21 +360,44 @@ def plot_colored_trajectories(
     plt.tight_layout()
     #plt.savefig(filename)
     return fig
+"""
 
 
-def make_autoencoder(nnx_rngs, jax_keys, data, n_modules, dims_encoder, dims_decoder):
-    params = random_init2(jax_keys, n_modules, (-3, 3), (-3, 3), 0, 0.2)
+class KeySource:
+    """nnx.Rngs-like key provider, implemented as a plain python object.
 
-    # position des modules
-    xx = [jnp.cos(2*jnp.pi*k/n_modules)*3 for k in range(n_modules)] 
-    yy = [jnp.sin(2*jnp.pi*k/n_modules)*3 for k in range(n_modules)]
+    nnx.Rngs keeps a traced RngCount that cannot be mutated from inside
+    jax.vmap (TraceContextError). With noise = init_noise = 0 the key is
+    never numerically used, so a stateless provider is equivalent here.
+    """
+
+    def __init__(self, key):
+        self.key = key
+
+    def default(self, *tags):
+        return self.key
+
+    def __getattr__(self, tag):
+        return lambda: self.key
 
 
-    subkeys = jax.random.split(jax_keys, n_modules)
+def make_autoencoder(run_key, nt, dims_encoder, dims_decoder, n_modules):
+    """One candidate model: random landscape + fresh MLP weights."""
+    params = random_init2(run_key, n_modules, (-3, 3), (-3, 3), -0.2, 0.2)
+
+    # fixed module layout (random type selection is not used)
+    """modules = [
+        AnisotropicNode(x=params[0, 0], y=params[0, 1], a=np.array(params[0, 2]),
+                        sx=np.array(params[0, 3]), sy=np.array(params[0, 4]),
+                        th=np.array(params[0, 5]), tau=1.),
+        AnisotropicCenter(x=params[1, 0], y=params[1, 1], a=np.array(params[1, 2]),
+                          sx=np.array(params[1, 3]), sy=np.array(params[1, 4]),
+                          th=np.array(params[1, 5]), tau=1.),
+    ]"""
+    subkeys = jax.random.split(run_key, n_modules)
     modules = []
     for i in range(n_modules):
         numb = jax.random.uniform(subkeys[i])
-
         if numb < 0.25:
             modules.append(AnisotropicNode(x=params[i, 0], y=params[i, 1], a=np.array(params[i, 2]), sx=np.array(params[i, 3]), sy=np.array(params[i, 4]), th=np.array(params[i, 5]), tau=1.))
         elif numb < 0.50:
@@ -380,41 +406,18 @@ def make_autoencoder(nnx_rngs, jax_keys, data, n_modules, dims_encoder, dims_dec
             modules.append(AnisotropicCenter(x=params[i, 0], y=params[i, 1], a=np.array(params[i, 2]), sx=np.array(params[i, 3]), sy=np.array(params[i, 4]), th=np.array(params[i, 5]), tau=1.))
         elif numb < 1:
             modules.append(AnisotropicNegCenter(x=params[i, 0], y=params[i, 1], a=np.array(params[i, 2]), sx=np.array(params[i, 3]), sy=np.array(params[i, 4]), th=np.array(params[i, 5]), tau=1.))
+    
+    landscape = Landscape(module_list=modules, A0=0.00, init_cond=(0.0, 0.0),
+                          regime=mr_const_aniso, n_regimes=1)
 
-    landscape = Landscape(
-        module_list=modules,
-        A0=0.00,
-        init_cond=(0.0, 0.0),
-        regime=mr_const_aniso,
-        n_regimes=1,
-        # morphogen_times=(50.,),
-    )
-
-
-    ############## Initializing the landscape ###############
-    rngs = nnx.Rngs(0)
-    landscape_flax = AnisotropicLandscapeFlax(landscape, rngs)
-
-    init_noise = 0.
-    t0 = 0.
-    tf = 20.
-    nt = data.shape[2]
-    ndt = 50 #int(50*data.shape[2]/20)
-    noise = 0.
-
-    landscape_flax.set_simulation(init_noise=init_noise, t0=t0, tf=tf, nt=nt, ndt=ndt, noise=noise)
+    landscape_flax = AnisotropicLandscapeFlax(landscape, KeySource(run_key))
+    landscape_flax.set_simulation(init_noise=0., t0=0., tf=20., nt=nt, ndt=50, noise=0.)
     landscape_flax.set_regime_params(signal_param=None)
     landscape_flax.set_state_probs(state_probs_aniso)
-    #landscape_flax.set_solver_info(Dopri5(), SaveAt(ts=jnp.linspace(t0, tf, nt)), PIDController(rtol=1e-5, atol=1e-5))
 
-    # Initialiazing the decoder
-    #dims_encoder = [4, 8, 4, 2]
-    #dims_decoder = [2, 8, 8, 4]
-
-    autoencoder = AutoEncoder(landscape_flax, dims_decoder=dims_decoder, dims_encoder=dims_encoder, rngs=rngs)
-
-
-    return autoencoder
+    rngs = nnx.Rngs(run_key)  # consumed once, at MLP weight init
+    return AutoEncoder(landscape_flax, dims_decoder=dims_decoder,
+                       dims_encoder=dims_encoder, rngs=rngs)
 
 
 def save_autoencoder2(autoencoder, path):
@@ -668,3 +671,95 @@ def load_model(path, rngs=None):
     )
 
     return autoencoder
+
+
+def landscape_summary(landscape_flax):
+    """Trainable + static landscape params as plain python data (for JSON)."""
+    landscape = landscape_flax.get_landscape_aniso()
+    dynamic, static, Js = landscape_to_params(landscape)
+    return {
+        "dynamic": {"shape": list(np.asarray(dynamic).shape),
+                    "values": np.asarray(dynamic).tolist()},
+        "static": {"shape": list(np.asarray(static).shape),
+                   "values": np.asarray(static).tolist()},
+        "J": np.asarray(Js).tolist(),
+        "A0": float(np.asarray(landscape.A0)),
+        "init_cond": [float(v) for v in np.asarray(landscape.init_cond)],
+        "n_regimes": int(landscape.n_regimes),
+    }
+
+
+
+def _key_name(prefix):
+    parts = []
+    for part in prefix:
+        if hasattr(part, "name"):
+            parts.append(str(part.name))
+        elif hasattr(part, "key"):
+            parts.append(str(part.key))
+        elif hasattr(part, "index"):
+            parts.append(str(part.index))
+    return "_".join(parts)
+
+
+def save_all_params(runset, path):
+    """One .npz holding every run's params, landscape params and losses."""
+    out = {}
+    for prefix, leaf in jax.tree_util.tree_leaves_with_path(runset.params):
+        out[_key_name(prefix)] = np.asarray(leaf)
+
+    dyn = runset.params["landscape_flax"]["dynamic"]["module"]
+    out["landscape_dynamic"] = np.stack(
+        [np.asarray(dyn[k]) for k in ("x", "y", "a", "sx", "sy", "th")], axis=-1)
+    out["landscape_J"] = np.asarray(runset.rest["landscape_flax"]["static"]["module"]["J"])
+    out["losses"] = runset.losses
+    out["init_losses"] = runset.init_losses
+    np.savez(path, **out)
+
+
+
+def analyze_best_run(i, runset, run_dir, data, xx, yy, gene_names, start_embryon_space, end_embryon_space):
+    """Best-run-only analysis: PNGs + gifs written to the top-level run dir."""
+    model = runset.model(i)
+    ns, nt = data.shape[1], data.shape[2]
+    traj_init = data[:, :, 0]
+
+    trained_encoded_traj = model.encode_traj(data)
+    trained_real_traj = model(traj_init)
+    trained_traj_latent = model.get_latent_trajectory(traj_init)
+    rms = float(RMS_points(data, trained_real_traj))
+
+    logging.info("run %d (best) | RMS of trained traj: %.5f | final loss: %.4e",
+                 i, rms, float(runset.losses[-1,-1, i]))
+
+    show_init_latent(trained_encoded_traj, order=True,
+                     filename=run_dir / "trained_init_pts_latent.png")
+
+    if ns < 100:
+        show_trajectory(np.swapaxes(trained_encoded_traj, 2, 1),
+                        np.swapaxes(trained_traj_latent, 2, 1),
+                        "trained trajectories", "Encoded data", "Simulated trajectories",
+                        filename=run_dir / "trained_trajectories.gif")
+    else:
+        show_trajectory(np.swapaxes(trained_encoded_traj[:, ::int(100 / 10), :], 2, 1),
+                        np.swapaxes(trained_traj_latent[:, ::int(100 / 10), :], 2, 1),
+                        "trained trajectories", "Encoded data", "Simulated trajectories",
+                        filename=run_dir / "trained_trajectories.gif")
+
+    data_T = np.swapaxes(data, 1, 2)
+    trained_real_traj_T = np.swapaxes(trained_real_traj, 1, 2)
+    show_gene_evol(data_T[0], trained_real_traj_T[0], None,
+                   data_T[1], trained_real_traj_T[1], None,
+                   data_T[3], trained_real_traj_T[3], None,
+                   data_T[2], trained_real_traj_T[2], None,
+                   start=start_embryon_space, end=end_embryon_space,
+                   filename=run_dir / "gene_evol_trained.gif")
+
+    # genes in the latent space
+    q_init_latent = trained_encoded_traj[:, :, 0]
+    traj_2d, _states = model.landscape_flax(q_init_latent)
+    fig = plot_colored_trajectories(traj_2d, trained_real_traj, gene_names)
+    fig.savefig(run_dir / "genes_latent_space.png", dpi=150)
+    plt.close(fig)
+
+    return model, q_init_latent, trained_real_traj, rms
