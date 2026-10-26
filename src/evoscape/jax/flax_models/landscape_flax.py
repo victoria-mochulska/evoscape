@@ -7,7 +7,7 @@ import jax.random as jrd
 from diffrax import Dopri5, SaveAt, PIDController
 
 from ..converters import landscape_to_pytree, pytree_to_landscape, landscape_to_pytree_aniso, pytree_to_landscape_aniso
-from ..dynamics import _integrate, _integrate_aniso, _integrate_aniso2
+from ..dynamics import _integrate, _integrate_aniso, _integrate_aniso2, get_flow_aniso
 from ..regimes import wrapped_regime
 from ..types import LandscapeDynamic, ModuleDynamic, AnisotropicLandscapeDynamic, AnisotropicModuleDynamic
 
@@ -342,3 +342,12 @@ class AnisotropicLandscapeFlax(nnx.Module):
             fitness=fitness,
             result=result,
         )
+
+    # ==============================================================
+    # GET DYNAMICS
+    # ==============================================================
+
+    def get_dynamics(self, q, t=0):        # q: (..., 2) -> (..., 2)
+        flat = jnp.reshape(q, (-1, 2))             # (B, 2)
+        dyn = get_flow_aniso(t, flat.T, self.dynamic, self.static, self.regime)  # (2, B)
+        return jnp.reshape(dyn.T, q.shape)         # back to (..., 2)
