@@ -1,9 +1,12 @@
 from functools import partial
-
+import dataclasses
 import jax.random as jrd
 import jax.numpy as jnp
 import jax.tree_util as jtu
-
+import jax
+import numpy as np
+import tqdm
+import logging
 from jax import value_and_grad, jit
 from jax.lax import scan
 
@@ -128,6 +131,28 @@ def run_optimization_decoder(dynamic, decoder, key, steps, loss_fn, opt_dynamic,
     return dynamic_vals, fitness_vals
 
 
+
+
+@dataclasses.dataclass
+class RunSet:
+    """A batch of runs sharing one graph definition.
+
+    params / opt_state carry the run axis on axis 0; losses has shape
+    (n_epochs, n_runs); init_losses has shape (n_runs,).
+    """
+    graphdef: object
+    rest: object
+    params: object
+    opt_state: object
+    losses: np.ndarray
+    init_losses: np.ndarray
+
+    def model(self, i):
+        """Unbatched nnx.AutoEncoder for run i (for analysis / plotting)."""
+        params_i = jax.tree.map(lambda v: v[i], self.params)
+        return nnx.merge(self.graphdef, params_i, self.rest)
+
+
 def make_optimizer(
     model,
     learning_rate=1e-3,
@@ -182,3 +207,110 @@ def make_wrt(
     train_filter = nnx.Any(*filters)
 
     return train_filter
+
+
+
+
+def train_runs(models, target, lr, n_epochs, verbose_dt):
+    """Train all runs with one vmap'd optimizer step per epoch.
+
+    Epochs are grouped in blocks of `verbose_dt` (one lax.scan each); the
+    progress bar and loss collection happen once per block, so there is one
+    host-device sync per block instead of one per epoch.
+    target: (4, ns, nt) jax array of gene data.
+    """
+    graphdefs, params_list, rests = zip(*[nnx.split(m, nnx.Param, ...) for m in models])
+    batched = jax.tree.map(lambda *xs: jnp.stack(xs, axis=0), *params_list)
+    graphdef, rest = graphdefs[0], rests[0]
+
+    q_init = target[:, :, 0]
+    ns, nt = target.shape[1], target.shape[2]
+
+    def loss_fn(params_i):
+        model = nnx.merge(graphdef, params_i, rest)
+        z = model.encoder(q_init.T)                    # (ns, 4) -> (ns, 2)
+        z = z.T                                        # (2, ns)
+        traj, _states = model.landscape_flax(z)        # (2, ns, nt)
+        decoded = model.decoder(traj.reshape(2, -1).T) # (ns*nt, 2) -> (ns*nt, 4)
+
+        encoded_data = model.encode_traj(target)
+        simulated_latent = model.get_latent_trajectory(q_init)
+        loss_latent_space = jnp.mean((simulated_latent - encoded_data)**2)
+
+        recon_data = model.forward_no_dynamics(target)
+        loss_reconst = jnp.mean((recon_data - target)**2)
+        dynamic_param = model.landscape_flax.dynamic.module
+        loss_module = jnp.sum(jnp.abs(dynamic_param.a))
+
+        state_autoencoder = nnx.state([model.encoder, model.decoder], nnx.Param)
+
+        L1_norm_autoencoder = sum(
+            jnp.sum(jnp.abs(param))
+            for param in jax.tree.leaves(state_autoencoder)
+        )
+        
+
+        """JEb = jax.vmap(lambda v: jax.jacobian(lambda w: model.encoder(w[None])[0])(v))(target.reshape(-1, 4))   # (N, 2, 4)
+        JDb = jax.vmap(lambda v: jax.jacobian(lambda w: model.decoder(w[None])[0])(v))(model.encoder(target.reshape(-1, 4)))  # (N, 4, 2)
+        G = jnp.einsum("pij,pjk->pik", JEb, JDb)   # (N, 2, 2)
+        loss_commutation = jnp.mean(jnp.sum((G - jnp.eye(2))**2, axis=(-2, -1)))"""
+        
+        return jnp.mean((decoded.T.reshape(4, ns, nt) - target) ** 2) + loss_latent_space + loss_reconst + loss_module + L1_norm_autoencoder
+
+    tx = optax.adam(learning_rate=lr)
+    # vmap the init: tx.init(batched) leaves the adam `count` counter scalar
+    # (shape ()), which vmap(step) then rejects.
+    opt_state = jax.vmap(tx.init, in_axes=0)(batched)
+
+    def step(params_i, opt_i):
+        loss, grads = jax.value_and_grad(loss_fn)(params_i)
+        updates, opt_new = tx.update(grads, opt_i, params_i)
+        return optax.apply_updates(params_i, updates), opt_new, loss
+
+    vmapped_step = jax.jit(jax.vmap(step, in_axes=(0, 0), out_axes=(0, 0, 0)))
+    vmapped_loss = jax.jit(jax.vmap(loss_fn))
+
+    def block_scan(carry, _):
+        params_i, opt_i, alive = carry
+        params_new, opt_new, loss = vmapped_step(params_i, opt_i)
+
+        ok = jnp.isfinite(loss)
+
+        def freeze(new, old):
+            return jax.tree.map(
+                lambda nw, od: jnp.where(ok[(slice(None),) + (None,) * (nw.ndim - 1)], nw, od),
+                new, old)
+
+        params_new = jax.tree.map(freeze, params_new, params_i)
+        opt_new = jax.tree.map(freeze, opt_new, opt_i)
+        loss = jnp.where(ok, loss, jnp.inf)
+
+        return (params_new, opt_new, alive & ok), loss
+
+
+    
+
+    init_losses = np.asarray(vmapped_loss(batched))
+    params, losses = batched, []
+    alive = jnp.ones(len(models), dtype=bool)
+    pbar = tqdm.tqdm(total=n_epochs)
+    for start in range(0, n_epochs, max(1, verbose_dt)):
+        block_len = min(max(1, verbose_dt), n_epochs - start)
+        (params, opt_state, alive), block_losses = jax.lax.scan(
+            block_scan, (params, opt_state, alive), length=block_len)
+        losses.append(np.asarray(block_losses))
+        pbar.update(block_len)
+        last = block_losses[-1]
+        live = np.isfinite(last)
+        pbar.set_postfix({"loss": f"{np.mean(last[live]):.4e}", "dead": (~live).sum()}) 
+
+
+        newly_dead = ~live & alive                # alive before this block, dead after it
+        if newly_dead.any():
+            logging.warning("run(s) %s discarded at epoch ~%d",
+                            np.where(newly_dead)[0].tolist(), start + block_len)
+        alive = live                              # update for the next block's transition check
+            
+    pbar.close()
+
+    return RunSet(graphdef, rest, params, opt_state, np.stack(losses), init_losses)
