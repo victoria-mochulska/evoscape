@@ -96,6 +96,21 @@ class AutoEncoder(nnx.Module):
         traj_encoded = vencoder(traj) # (2, n, nt)
         return traj_encoded
 
+    def decode_traj(self, traj):
+        vdecoder = nnx.vmap(
+                nnx.vmap(
+                    lambda x : self.decoder(x),
+                    in_axes=1,
+                    out_axes=1
+                ),
+                in_axes=2,
+                out_axes=2
+        )
+
+        traj_decoded = vdecoder(traj) # (d, n, nt)
+
+        return traj_decoded
+
 
     def get_latent_trajectory(self, q_init):
         # encoding the initial condition
